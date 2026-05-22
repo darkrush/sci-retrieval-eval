@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-目前已经按 `plan.md` 完成项目启动阶段，新的独立仓库已经建立并形成可继续开发的基线。
+目前已经完成项目启动阶段，并进入第一个核心模块 `artifact store` 的实现与验收阶段。
 
 ## 已完成事项
 
@@ -31,6 +31,22 @@
   - `docs/ai/handoff_template.md`
   - `docs/ai/open_questions.md`
 - 补齐 CI：`.github/workflows/ci.yml`
+- 实现本地 artifact store：
+  - `ArtifactManifest`
+  - `ArtifactFile`
+  - `ArtifactDependency`
+  - `ArtifactStore`
+  - `LocalArtifactStore`
+- 补齐 artifact store 的关键约束：
+  - 路径安全校验
+  - manifest/path 一致性校验
+  - `is_complete()` 同时要求 `_MANIFEST.json` 和 `_SUCCESS`
+- 补齐 artifact store 单元测试：
+  - manifest 读写
+  - put/get/exists
+  - `_SUCCESS` 完整性判断
+  - path traversal 拒绝
+  - manifest mismatch 拒绝
 
 ## 已验证事项
 
@@ -39,25 +55,30 @@
 - `pytest` 通过
 - `ruff check .` 通过
 - 包布局符合要求：只有 `src/eval_platform/`，没有根目录 `eval_platform/`
-- 当前未引入业务逻辑
+- 当前未引入 S3 / ES / Milvus / MTEB 业务逻辑
 - 未发现硬编码的 endpoint、bucket、API key、token、password
 
 ## 当前仓库状态
 
-- 分支：`main`
-- 工作区：干净
-- 最新提交：`0750cf1 complete bootstrap baseline`
+- 主分支：`main`
+- 当前开发分支：`feat/artifact-store`
+- artifact store 当前提交：`3f74870 Add local artifact store with manifest schema and path safety.`
+- artifact store 代码已通过本地检查，可以推送
 
 ## 当前结论
 
 - bootstrap 阶段已经完成
-- 仓库已具备继续实现核心模块的条件
-- 下一步建议进入 `artifact store` 实现，作为第一个真正的业务模块
+- 第一个核心模块 `artifact store` 已完成本地实现
+- 该模块当前具备推送条件
+- 下一步建议进入：
+  - S3 artifact backend
+  - checksum helper
+  - artifact store 文档细化
 
 ## 建议下一阶段目标
 
-- 实现 `eval_platform/artifacts/`
-- 明确 artifact manifest schema
-- 提供 local store / S3 store 抽象
-- 增加对应单元测试
+- 在当前 `artifact store` 基础上补齐 S3 backend
+- 增加 checksum / file metadata helper
+- 明确 manifest versioning 策略
+- 继续保持 local/S3 backend 的统一接口
 - 继续保持“不引入 Redis / SQL / Airflow”的约束
