@@ -71,8 +71,8 @@
 ## 当前仓库状态
 
 - 主分支：`main`
-- 当前开发分支：`feat/artifact-store`（已推送远端，ahead 3 / behind 0）
-- artifact store 当前提交：`ff7abaa refine artifact manifest and local store`
+- 当前开发分支：`feat/artifact-store`（已推送远端，ahead 4 / behind 0）
+- artifact store 当前提交：`a10b906 update progress report for artifact store`
 - 本地 artifact store 已完成，待合并
 
 ## 当前结论
