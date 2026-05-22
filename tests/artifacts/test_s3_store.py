@@ -22,6 +22,16 @@ class FakeObjectNotFoundError(Exception):
         self.response = {"Error": {"Code": "NoSuchKey"}}
 
 
+class FakeNoSuchBucketError(Exception):
+    def __init__(self) -> None:
+        self.response = {"Error": {"Code": "NoSuchBucket"}}
+
+
+class FakeS3ClientMissingBucket:
+    def head_object(self, *, Bucket: str, Key: str) -> None:
+        raise FakeNoSuchBucketError
+
+
 class FakeS3Client:
     def __init__(self, page_size: int | None = None) -> None:
         self.objects: dict[str, bytes] = {}
@@ -240,6 +250,17 @@ def test_list_artifacts_handles_pagination(bucket: str) -> None:
         ("normalized_dataset", "sample_001"),
         ("normalized_dataset", "sample_002"),
     ]
+
+
+def test_no_such_bucket_is_not_silently_ignored(bucket: str) -> None:
+    client = FakeS3ClientMissingBucket()
+    store = S3ArtifactStore(bucket=bucket, prefix="", client=client)
+
+    with pytest.raises(FakeNoSuchBucketError):
+        store.exists("normalized_dataset", "sample_001", "corpus.jsonl")
+
+    with pytest.raises(FakeNoSuchBucketError):
+        store.is_complete("normalized_dataset", "sample_001")
 
 
 def test_default_client_requires_boto3(monkeypatch: pytest.MonkeyPatch) -> None:

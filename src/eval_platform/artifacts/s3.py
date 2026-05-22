@@ -90,7 +90,7 @@ class S3ArtifactStore(ArtifactStore):
         response = getattr(exc, "response", None)
         if isinstance(response, dict):
             code = response.get("Error", {}).get("Code")
-            if code in {"404", "NoSuchKey", "NotFound", "NoSuchBucket"}:
+            if code in {"404", "NoSuchKey", "NotFound"}:
                 return True
         return False
 

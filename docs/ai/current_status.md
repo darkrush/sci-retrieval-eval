@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-S3 artifact backend (in progress).
+S3 artifact backend PR ready for merge review.
 
 ## Implemented
 
@@ -18,7 +18,7 @@ S3 artifact backend (in progress).
 
 ## In Progress
 
-- S3 backend tests and PR review
+Nothing.
 
 ## Not Implemented
 
@@ -39,4 +39,4 @@ S3 artifact backend (in progress).
 
 ## Next Task
 
-Merge S3 artifact store PR, then start `feat/dataset-schema`.
+Open and merge S3 artifact store PR, then start `feat/dataset-schema`.
