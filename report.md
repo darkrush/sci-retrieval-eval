@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-`feat/artifact-store` 已完成本地实现，正在进行合并前小修（接口与 schema 稳定性）。
+`feat/artifact-store` 本地 artifact store 已完成，合并前小修已完成，可进入 PR / merge review。
 
 ## 已完成事项
 
@@ -50,7 +50,7 @@
   - path traversal 拒绝
   - manifest mismatch 拒绝
 
-## 合并前小修（进行中）
+## 合并前小修（已完成）
 
 - `ArtifactStore` 使用 `artifact_uri()`，抽象接口不再暴露 `Path`
 - `ArtifactManifest` 增加 `schema_version`
@@ -71,15 +71,14 @@
 ## 当前仓库状态
 
 - 主分支：`main`
-- 当前开发分支：`feat/artifact-store`（已推送远端，ahead 2 / behind 0）
-- artifact store 当前提交：`3f74870 Add local artifact store with manifest schema and path safety.`
-- 合并前小修尚未提交
+- 当前开发分支：`feat/artifact-store`（已推送远端，ahead 3 / behind 0）
+- artifact store 当前提交：`ff7abaa refine artifact manifest and local store`
+- 本地 artifact store 已完成，待合并
 
 ## 当前结论
 
 - bootstrap 阶段已经完成
-- 第一个核心模块 `artifact store` 方向正确，可作为第一版基础
-- 建议完成合并前小修后再合并到 `main`
+- 第一个核心模块 `artifact store` 功能完整，可进入 PR / merge review
 - 合并后下一步：`feat/s3-artifact-store`
 
 ## 建议下一阶段目标

@@ -63,4 +63,4 @@ See `docs/ai/current_status.md`.
 
 ## Next Step
 
-Implement the first core module: artifact store.
+Open and merge the artifact store PR, then implement the S3 artifact backend.

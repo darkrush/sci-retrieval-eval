@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Artifact store pre-merge polish.
+Artifact store PR ready for merge review.
 
 ## Implemented
 
@@ -17,7 +17,7 @@ Artifact store pre-merge polish.
 
 ## In Progress
 
-- Pre-merge interface and schema stabilization for artifact store
+Nothing.
 
 ## Not Implemented
 
