@@ -27,7 +27,7 @@ def _sample_manifest(artifact_id: str = "sample_001") -> ArtifactManifest:
         artifact_type="normalized_dataset",
         created_at=datetime(2026, 5, 22, 12, 0, 0, tzinfo=UTC),
         created_by="test",
-        files=[ArtifactFile(path="corpus.jsonl", size_bytes=128, checksum="abc123")],
+        files=[ArtifactFile(path="corpus.jsonl", size_bytes=128, sha256="abc123")],
     )
 
 
@@ -139,3 +139,11 @@ def test_write_manifest_rejects_mismatched_id(store: LocalArtifactStore) -> None
 
     with pytest.raises(ManifestMismatchError):
         store.write_manifest("normalized_dataset", "other_id", manifest)
+
+
+def test_artifact_uri_returns_file_uri(store: LocalArtifactStore, tmp_path: Path) -> None:
+    uri = store.artifact_uri("normalized_dataset", "sample_001")
+
+    assert uri == store.artifact_dir("normalized_dataset", "sample_001").resolve().as_uri()
+    assert uri.startswith("file://")
+    assert str(tmp_path.resolve()) in uri

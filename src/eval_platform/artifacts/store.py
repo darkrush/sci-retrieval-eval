@@ -1,7 +1,6 @@
 """Artifact store abstract interface."""
 
 from abc import ABC, abstractmethod
-from pathlib import Path
 
 from eval_platform.artifacts.manifest import ArtifactManifest
 
@@ -67,6 +66,6 @@ class ArtifactStore(ABC):
     def is_complete(self, artifact_type: str, artifact_id: str) -> bool:
         """Return whether an artifact has both manifest and success marker."""
 
-    def artifact_dir(self, artifact_type: str, artifact_id: str) -> Path:
-        """Return the storage path for an artifact."""
-        raise NotImplementedError
+    @abstractmethod
+    def artifact_uri(self, artifact_type: str, artifact_id: str) -> str:
+        """Return a backend-specific URI for an artifact."""

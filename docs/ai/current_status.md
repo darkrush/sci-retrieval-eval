@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Artifact store (in progress).
+Artifact store pre-merge polish.
 
 ## Implemented
 
@@ -12,12 +12,12 @@ Artifact store (in progress).
 - CLI entry point: `evalctl version`
 - Dev tooling: pytest, ruff, mypy (configured in `pyproject.toml`)
 - Artifact manifest schema (`ArtifactManifest`, `ArtifactFile`, `ArtifactDependency`)
-- Artifact store abstract interface (`ArtifactStore`)
-- Local artifact store (`LocalArtifactStore`)
+- Artifact store abstract interface (`ArtifactStore`) with `artifact_uri()`
+- Local artifact store (`LocalArtifactStore`) with path safety and manifest consistency checks
 
 ## In Progress
 
-- Artifact store tests and documentation polish
+- Pre-merge interface and schema stabilization for artifact store
 
 ## Not Implemented
 
@@ -35,8 +35,8 @@ Artifact store (in progress).
 
 - AI agents may create unmaintainable scripts if project rules are not strict.
 - MTEB doc-level evaluation and internal chunk-level evidence evaluation need to be clearly separated.
-- Artifact versioning and manifest schema may evolve as pipelines are implemented.
+- Manifest schema evolution must remain backward compatible via `schema_version`.
 
 ## Next Task
 
-Add S3 artifact backend and checksum validation helpers.
+Merge artifact store PR, then start `feat/s3-artifact-store`.

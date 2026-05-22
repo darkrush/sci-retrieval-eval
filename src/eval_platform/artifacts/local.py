@@ -30,6 +30,9 @@ class LocalArtifactStore(ArtifactStore):
         safe_id = validate_coordinate(artifact_id, "artifact_id")
         return resolve_under_root(self._root, safe_type, safe_id)
 
+    def artifact_uri(self, artifact_type: str, artifact_id: str) -> str:
+        return self.artifact_dir(artifact_type, artifact_id).resolve().as_uri()
+
     def _file_path(self, artifact_type: str, artifact_id: str, relative_path: str) -> Path:
         safe_path = validate_relative_path(relative_path)
         artifact_path = self.artifact_dir(artifact_type, artifact_id)

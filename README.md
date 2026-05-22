@@ -29,7 +29,7 @@ The first milestone is project bootstrap. At this stage, the repository provides
 - `docs/ai/current_status.md`: current implementation status
 - `docs/architecture.md`: system architecture
 - `src/eval_platform/`: implementation modules
-- `tests/`: unit and integration tests
+- `tests/`: tests organized by module (e.g. `tests/artifacts/`)
 
 ## Planned Modules
 

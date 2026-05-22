@@ -18,12 +18,13 @@ class ArtifactFile(BaseModel):
 
     path: str
     size_bytes: int | None = None
-    checksum: str | None = None
+    sha256: str | None = None
 
 
 class ArtifactManifest(BaseModel):
     """Manifest describing a pipeline artifact."""
 
+    schema_version: str = "1"
     artifact_id: str
     artifact_type: str
     created_at: datetime
