@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Local + S3 artifact store 已合并到 `main`。当前在 `feat/dataset-schema` 分支实现 normalized dataset schema。
+Local + S3 artifact store 已合并到 `main`。`feat/dataset-schema` 上 normalized dataset schema 已完成本地实现，待 PR / merge review。
 
 ## 已完成事项（main）
 
@@ -10,12 +10,14 @@ Local + S3 artifact store 已合并到 `main`。当前在 `feat/dataset-schema` 
 - Local artifact store + S3 artifact store
 - `ArtifactManifest` / `ArtifactStore` 基础层
 
-## 进行中（feat/dataset-schema）
+## 已完成事项（feat/dataset-schema）
 
 - normalized dataset schema（`CorpusRecord` / `QueryRecord` / `QrelRecord` / `NormalizedDataset`）
 - JSONL 读写（`dump_jsonl` / `load_jsonl`）
 - normalized dataset artifact 读写（`write_normalized_dataset_artifact` / `read_normalized_dataset_artifact`）
 - `ArtifactIncompleteError`
+- manifest count metadata 防覆盖
+- 拒绝纯空白 id/text
 - ADR：`docs/decisions/0002-normalized-dataset-schema.md`
 - `tests/datasets/` 单元测试
 
@@ -32,7 +34,7 @@ Local + S3 artifact store 已合并到 `main`。当前在 `feat/dataset-schema` 
 
 ## 当前结论
 
-- dataset schema 是 MTEB adapter 的前置条件
+- dataset schema 功能完整，可进入 PR / merge review
 - 合并后下一步：`feat/mteb-dataset-adapter`
 
 ## 建议下一阶段目标

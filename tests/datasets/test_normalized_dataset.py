@@ -83,6 +83,36 @@ def test_manifest_metadata_contains_counts(store: LocalArtifactStore) -> None:
     assert manifest.metadata["source"] == "unit-test"
 
 
+def test_manifest_count_metadata_is_not_overridden_by_user_metadata(
+    store: LocalArtifactStore,
+) -> None:
+    dataset = NormalizedDataset(
+        corpus=[CorpusRecord(doc_id="doc-1", text="corpus text")],
+        queries=[QueryRecord(query_id="q-1", text="query text")],
+        qrels=[QrelRecord(query_id="q-1", doc_id="doc-1")],
+        metadata={
+            "corpus_count": 999,
+            "query_count": 999,
+            "qrel_count": 999,
+        },
+    )
+
+    manifest = write_normalized_dataset_artifact(
+        store,
+        "sample_001",
+        dataset,
+        metadata={
+            "corpus_count": 888,
+            "query_count": 888,
+            "qrel_count": 888,
+        },
+    )
+
+    assert manifest.metadata["corpus_count"] == 1
+    assert manifest.metadata["query_count"] == 1
+    assert manifest.metadata["qrel_count"] == 1
+
+
 def test_manifest_files_include_dataset_jsonl_files(store: LocalArtifactStore) -> None:
     manifest = write_normalized_dataset_artifact(store, "sample_001", _sample_dataset())
 

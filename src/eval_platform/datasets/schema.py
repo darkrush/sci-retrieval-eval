@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 
 def _non_empty_string(value: str, field_name: str) -> str:
-    if not value:
+    if not value.strip():
         raise ValueError(f"{field_name} must not be empty")
     return value
 

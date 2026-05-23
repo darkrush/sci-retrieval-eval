@@ -83,3 +83,21 @@ def test_qrel_supports_graded_relevance() -> None:
     record = QrelRecord(query_id="q-1", doc_id="doc-1", relevance=2.0)
 
     assert record.relevance == 2.0
+
+
+@pytest.mark.parametrize(
+    ("factory", "payload"),
+    [
+        (CorpusRecord, {"doc_id": " ", "text": "hello"}),
+        (CorpusRecord, {"doc_id": "doc-1", "text": " "}),
+        (QueryRecord, {"query_id": " ", "text": "query"}),
+        (QueryRecord, {"query_id": "q-1", "text": " "}),
+        (QrelRecord, {"query_id": " ", "doc_id": "doc-1"}),
+        (QrelRecord, {"query_id": "q-1", "doc_id": " "}),
+    ],
+)
+def test_whitespace_only_identifiers_or_text_are_rejected(
+    factory: DatasetRecordModel, payload: dict[str, str]
+) -> None:
+    with pytest.raises(ValidationError):
+        factory.model_validate(payload)

@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Normalized dataset schema in progress.
+Normalized dataset schema PR ready for merge review.
 
 ## Implemented
 
@@ -19,7 +19,7 @@ Normalized dataset schema in progress.
 
 ## In Progress
 
-- Dataset schema tests and PR review
+Nothing.
 
 ## Not Implemented
 

@@ -43,14 +43,17 @@ def write_normalized_dataset_artifact(
     for filename, payload in file_payloads:
         store.put_file(NORMALIZED_DATASET_ARTIFACT_TYPE, artifact_id, filename, payload)
 
-    manifest_metadata = {
-        "corpus_count": len(dataset.corpus),
-        "query_count": len(dataset.queries),
-        "qrel_count": len(dataset.qrels),
-    }
+    manifest_metadata: dict[str, Any] = {}
     manifest_metadata.update(dataset.metadata)
     if metadata:
         manifest_metadata.update(metadata)
+    manifest_metadata.update(
+        {
+            "corpus_count": len(dataset.corpus),
+            "query_count": len(dataset.queries),
+            "qrel_count": len(dataset.qrels),
+        }
+    )
 
     manifest = ArtifactManifest(
         artifact_id=artifact_id,
