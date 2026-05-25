@@ -100,8 +100,6 @@ def _init_fake_sciverse_repo(repo_path: Path) -> tuple[str, str]:
             structured_min_chunk_size: int = 200
             structured_max_chunk_size: int = 800
             structured_ideal_tolerance: int = 100
-            source_type: str = "benchmark"
-            file_ext: str = ".jsonl"
         """,
     )
     _write(

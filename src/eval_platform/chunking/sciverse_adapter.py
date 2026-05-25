@@ -81,6 +81,16 @@ class SciverseAdminIngestChunkerConfig(BaseModel):
             "file_ext": self.file_ext,
         }
 
+    def recursive_chunk_options_params(self) -> dict[str, Any]:
+        return {
+            "chunk_size": self.chunk_size,
+            "chunk_overlap": self.chunk_overlap,
+            "keep_separator": self.keep_separator,
+            "structured_min_chunk_size": self.structured_min_chunk_size,
+            "structured_max_chunk_size": self.structured_max_chunk_size,
+            "structured_ideal_tolerance": self.structured_ideal_tolerance,
+        }
+
 
 @contextmanager
 def _temporary_package_root(path: Path, package_prefix: str) -> Iterator[None]:
@@ -204,7 +214,7 @@ class SciverseAdminIngestExternalChunker:
                     "sciverse admin-ingest is missing required chunking symbols"
                 ) from exc
 
-            options = options_cls(**self._config.chunk_params())
+            options = options_cls(**self._config.recursive_chunk_options_params())
 
             try:
                 _input_lines, rows = chunk_records(
