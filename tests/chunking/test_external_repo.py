@@ -126,10 +126,11 @@ def test_verify_external_chunker_repo_raises_for_commit_mismatch(
     git_repo: tuple[Path, str],
 ) -> None:
     repo_path, commit_sha = git_repo
+    wrong_commit_sha = ("0" if commit_sha[0] != "0" else "1") + commit_sha[1:]
     spec = ExternalChunkerRepoSpec(
         repo_path=str(repo_path),
         expected_remote_url="https://example.com/chunker.git",
-        expected_commit_sha=f"{commit_sha[:-1]}0",
+        expected_commit_sha=wrong_commit_sha,
     )
     with pytest.raises(ExternalChunkerRepoMismatchError, match="commit SHA mismatch"):
         verify_external_chunker_repo(spec)

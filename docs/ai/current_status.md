@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Version-pinned external chunker adapter in progress.
+Sciverse-path external chunker adapter in progress.
 
 ## Implemented
 
@@ -18,15 +18,15 @@ Version-pinned external chunker adapter in progress.
 - ChunkRecord validation and artifact read/write tests
 - Chunking runner with git clean-state inspection
 - Version-pinned external chunker adapter
+- Sciverse admin-ingest thin adapter with version-pinned repo checks
 
 ## In Progress
 
-- External repo version validation
-- Python callable chunker adapter tests and PR review
+- Sciverse-path adapter review
+- Real `sciverse_clean` smoke validation
 
 ## Not Implemented
 
-- Real external chunker adapter
 - Embedding pipeline
 - ES/Milvus index builder
 - Retrieval pipeline
@@ -36,8 +36,8 @@ Version-pinned external chunker adapter in progress.
 ## Current Risks
 
 - MTEB doc-level evaluation and internal chunk-level evidence evaluation need to be clearly separated.
-- External chunker API shape may differ from the injected `ExternalChunker` protocol.
+- `sciverse_clean` 真实输出字段可能与 fake repo 测试 still differ，需要再做一次真实 smoke。
 
 ## Next Task
 
-Open and merge external chunker adapter PR, then start `feat/embedding-schema`.
+Open and merge the Sciverse-path adapter PR, then start `feat/embedding-schema`.

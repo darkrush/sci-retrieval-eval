@@ -28,6 +28,12 @@ from eval_platform.chunking.git import (
 from eval_platform.chunking.jsonl import dump_chunks_jsonl, load_chunks_jsonl
 from eval_platform.chunking.runner import ChunkingRunConfig, ExternalChunker, run_chunking
 from eval_platform.chunking.schema import ChunkedCorpus, ChunkerProvenance, ChunkRecord
+from eval_platform.chunking.sciverse_adapter import (
+    SciverseAdapterError,
+    SciverseAdminIngestChunkerConfig,
+    SciverseAdminIngestExternalChunker,
+    run_version_pinned_sciverse_chunking,
+)
 
 __all__ = [
     "CHUNKED_CORPUS_ARTIFACT_TYPE",
@@ -46,6 +52,9 @@ __all__ = [
     "GitRepoState",
     "PythonCallableChunkerConfig",
     "PythonCallableExternalChunker",
+    "SciverseAdapterError",
+    "SciverseAdminIngestChunkerConfig",
+    "SciverseAdminIngestExternalChunker",
     "dump_chunks_jsonl",
     "ensure_git_repo_clean",
     "inspect_git_repo",
@@ -53,6 +62,7 @@ __all__ = [
     "read_chunked_corpus_artifact",
     "run_chunking",
     "run_version_pinned_external_chunking",
+    "run_version_pinned_sciverse_chunking",
     "verify_external_chunker_repo",
     "write_chunked_corpus_artifact",
 ]

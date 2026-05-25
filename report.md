@@ -2,54 +2,51 @@
 
 ## 当前阶段
 
-artifact store、S3 backend、dataset schema、MTEB adapter、chunking schema、chunking runner 已合并到 `main`。当前分支实现一个小型基础设施 PR：version-pinned external chunker adapter。
+`main` 已具备 artifact store、S3 backend、dataset schema、MTEB adapter、chunking schema 和 chunking runner。当前分支在此基础上继续做一层 repo-specific 但仍参数化的接入：`sciverse_clean/agentic-search` 的 `admin-ingest` 真正 chunk 逻辑。
 
 ## 已完成事项（main）
 
 - Local + S3 artifact store
 - normalized dataset schema + JSONL artifact 读写
 - MTEB dataset adapter
-- chunked corpus schema + ChunkerProvenance + artifact IO
+- chunked corpus schema + `ChunkerProvenance` + artifact IO
 - `inspect_git_repo` / `ensure_git_repo_clean`
 - `ChunkingRunConfig` / `run_chunking` + injectable `ExternalChunker`
-- dirty repo 安全边界、round-trip 与 config validation 测试
-- ADR：`docs/decisions/0005-chunking-runner.md`
-- `tests/chunking/test_git.py` / `tests/chunking/test_runner.py`
+- MTEB 新 layout 兼容修复
+- 真实 `IFIRNFCorpus` MTEB -> normalized_dataset -> fake chunk 本地/S3 smoke 验证
 
-## 本次 PR
+## 本次开发
 
-- 实现 external chunker repo 的版本约束校验
+- 保留并复用现有 version-pinned external repo 校验：
   - remote URL
   - commit SHA
   - clean state
-- 实现薄的 Python callable external chunker adapter
-- 实现 version-pinned external chunking helper
-- 复用现有 `run_chunking(...)` 写出 `chunked_corpus` artifact
+- 新增 `SciverseAdminIngestChunkerConfig`
+- 新增 `SciverseAdminIngestExternalChunker`
+- 新增 `run_version_pinned_sciverse_chunking(...)`
+- 通过动态导入 `<repo>/python_services/admin-ingest`，把外部 repo 的 `chunk_ndjson_records(...)` 接入当前 `run_chunking(...)`
+- 保持 provenance / dependency / manifest 统一收口
 - 不实现 embedding / ES / Milvus / retrieval / metrics
 
 ## 已验证事项
 
-- `pytest tests/chunking/test_external_repo.py tests/chunking/test_external_adapter.py tests/chunking/test_external_chunking_runner.py` 通过
+- `pytest tests/chunking/test_external_repo.py tests/chunking/test_external_adapter.py tests/chunking/test_external_chunking_runner.py tests/chunking/test_sciverse_adapter.py` 通过
 - `ruff check src/eval_platform/chunking tests/chunking` 通过
 - `mypy src/eval_platform/chunking tests/chunking` 通过
-- 版本校验失败路径已覆盖：
-  - remote URL mismatch
-  - commit SHA mismatch
-  - dirty repo
-- adapter 返回 `ChunkRecord` / `dict` 两种路径均已覆盖
-- version-pinned helper 会记录：
-  - source dependency
-  - external repo provenance
-  - adapter metadata in `chunk_params`
+- 新增 fake `sciverse` repo 测试覆盖：
+  - 动态导入 `python_services/admin-ingest`
+  - `NormalizedDataset -> NDJSON -> chunk_ndjson_records -> ChunkRecord`
+  - version-pinned helper 写出 `chunked_corpus` artifact
+  - dependency、repo provenance、chunk params 正确落入 manifest
 
 ## 当前限制
 
-- 仅支持 Python callable adapter
+- 仍未直接提供用户界面的 `SCIVERSE_PATH` 命令入口；当前是库级 adapter
+- 真实 `sciverse_clean` smoke 还需要再跑一轮，确认外部 repo 当前字段与 fake repo 假设一致
 - 不自动 `git fetch` 或 `git checkout`
 - 用户必须事先准备好正确的外部 repo checkout
-- 尚未接入真实 `sciverse_clean` chunk 模块路径
 
 ## 建议后续方向
 
-- 定义 embedding schema 与 artifact 格式
-- 下一步：`feat/embedding-schema`
+- 合并这条 `sciverse` adapter 分支
+- 然后开始 `feat/embedding-schema`
