@@ -27,6 +27,7 @@ MTEB dataset adapter 已合并到 `main`。`feat/chunking-schema` 已完成 sche
 ## 已验证事项
 
 - 测试不访问网络、真实 S3 或 git 命令
+- 提权后 `pip install -e ".[dev]"` 通过
 - `pytest` / `ruff check .` / `mypy .` 通过
 
 ## 当前结论
