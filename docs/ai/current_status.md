@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Chunking runner PR ready for merge review.
+Version-pinned external chunker adapter in progress.
 
 ## Implemented
 
@@ -17,10 +17,12 @@ Chunking runner PR ready for merge review.
 - Chunked corpus source artifact dependency in manifest
 - ChunkRecord validation and artifact read/write tests
 - Chunking runner with git clean-state inspection
+- Version-pinned external chunker adapter
 
 ## In Progress
 
-Nothing.
+- External repo version validation
+- Python callable chunker adapter tests and PR review
 
 ## Not Implemented
 
@@ -38,4 +40,4 @@ Nothing.
 
 ## Next Task
 
-Open and merge chunking runner PR, then start `feat/embedding-schema`.
+Open and merge external chunker adapter PR, then start `feat/embedding-schema`.

@@ -29,6 +29,7 @@
 
 12. Should chunked corpus artifacts always record external chunker provenance, even for local-only experiments?
 13. Should dirty external chunker repositories be rejected at runner time only, or also flagged in manifest metadata? (Runner currently rejects dirty repos before writing artifacts.)
+14. Should the long-term external chunker integration stay Python-callable only, or also support subprocess / RPC adapters later?
 
 ## Frontend
 
