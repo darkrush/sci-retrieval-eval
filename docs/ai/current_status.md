@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Chunking schema in progress.
+Chunking schema PR ready for merge review.
 
 ## Implemented
 
@@ -13,10 +13,12 @@ Chunking schema in progress.
 - Normalized dataset schema and artifact read/write
 - MTEB dataset adapter (convert, load, export)
 - Chunked corpus schema with external chunker provenance metadata
+- Chunk JSONL helpers (`dump_chunks_jsonl`, `load_chunks_jsonl`)
+- Chunked corpus source artifact dependency in manifest
 
 ## In Progress
 
-- Chunking schema tests and PR review
+Nothing.
 
 ## Not Implemented
 

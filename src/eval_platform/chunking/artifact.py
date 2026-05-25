@@ -3,10 +3,14 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from eval_platform.artifacts.manifest import ArtifactFile, ArtifactManifest
+from eval_platform.artifacts.manifest import (
+    ArtifactDependency,
+    ArtifactFile,
+    ArtifactManifest,
+)
 from eval_platform.artifacts.store import ArtifactIncompleteError, ArtifactStore
-from eval_platform.chunking.schema import ChunkedCorpus, ChunkerProvenance, ChunkRecord
-from eval_platform.datasets.jsonl import dump_jsonl, load_jsonl
+from eval_platform.chunking.jsonl import dump_chunks_jsonl, load_chunks_jsonl
+from eval_platform.chunking.schema import ChunkedCorpus, ChunkerProvenance
 
 CHUNKED_CORPUS_ARTIFACT_TYPE = "chunked_corpus"
 CHUNKS_FILENAME = "chunks.jsonl"
@@ -23,9 +27,10 @@ def write_chunked_corpus_artifact(
     metadata: dict[str, Any] | None = None,
     chunker: ChunkerProvenance | None = None,
     chunk_params: dict[str, Any] | None = None,
+    source_dependency: ArtifactDependency | None = None,
 ) -> ArtifactManifest:
     """Write a chunked corpus artifact to the given store."""
-    chunks_bytes = dump_jsonl(corpus.chunks).encode("utf-8")
+    chunks_bytes = dump_chunks_jsonl(corpus.chunks).encode("utf-8")
     store.put_file(CHUNKED_CORPUS_ARTIFACT_TYPE, artifact_id, CHUNKS_FILENAME, chunks_bytes)
 
     manifest_metadata: dict[str, Any] = {}
@@ -49,6 +54,7 @@ def write_chunked_corpus_artifact(
         created_at=created_at or datetime.now(UTC),
         created_by=created_by,
         code_git_sha=code_git_sha,
+        dependencies=[source_dependency] if source_dependency is not None else [],
         metadata=manifest_metadata,
         files=[ArtifactFile(path=CHUNKS_FILENAME, size_bytes=len(chunks_bytes))],
     )
@@ -81,6 +87,6 @@ def read_chunked_corpus_artifact(
     ).decode("utf-8")
 
     return ChunkedCorpus(
-        chunks=load_jsonl(chunks_text, ChunkRecord),
+        chunks=load_chunks_jsonl(chunks_text),
         metadata=corpus_metadata,
     )

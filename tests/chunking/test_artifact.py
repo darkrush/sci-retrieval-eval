@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from eval_platform.artifacts import LocalArtifactStore
+from eval_platform.artifacts import ArtifactDependency, LocalArtifactStore
 from eval_platform.chunking import (
     ChunkedCorpus,
     ChunkerProvenance,
@@ -79,6 +79,29 @@ def test_manifest_count_metadata_is_not_overridden_by_user_metadata(
     assert manifest.metadata["chunk_count"] == 3
     assert manifest.metadata["unique_doc_count"] == 2
     assert manifest.metadata["pipeline_step"] == "chunk"
+
+
+def test_write_chunked_corpus_artifact_records_source_dependency(
+    store: LocalArtifactStore,
+) -> None:
+    source = ArtifactDependency(
+        artifact_id="litsearch_test",
+        artifact_type="normalized_dataset",
+    )
+
+    manifest = write_chunked_corpus_artifact(
+        store,
+        "litsearch_test_chunks",
+        _sample_corpus(),
+        source_dependency=source,
+    )
+
+    assert len(manifest.dependencies) == 1
+    assert manifest.dependencies[0].artifact_id == "litsearch_test"
+    assert manifest.dependencies[0].artifact_type == "normalized_dataset"
+
+    persisted = store.read_manifest("chunked_corpus", "litsearch_test_chunks")
+    assert persisted.dependencies == manifest.dependencies
 
 
 def test_write_chunked_corpus_artifact_marks_complete(store: LocalArtifactStore) -> None:
