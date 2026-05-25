@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-artifact store、S3 backend、dataset schema、MTEB adapter、chunking schema、chunking runner 已合并到 `main`。
+artifact store、S3 backend、dataset schema、MTEB adapter、chunking schema、chunking runner 已合并到 `main`。当前分支只收敛一个小型修复 PR：新版 MTEB task layout 兼容。
 
 ## 已完成事项（main）
 
@@ -18,12 +18,13 @@ artifact store、S3 backend、dataset schema、MTEB adapter、chunking schema、
 
 ## 本次修复
 
-- 修复 `mteb_adapter` 对新版 MTEB task 布局的兼容问题
-- 支持从 `task.dataset[subset][split]` 读取 `corpus/queries/relevant_docs`
-- 支持将 `datasets.Dataset` 形式的 `corpus/queries` 转成内部所需 mapping
-- 新增两条 smoke CLI：
-  - `python -m eval_platform.cli.mteb_ifir_nfcorpus_smoke`
-  - `python -m eval_platform.cli.ifir_nfcorpus_smoke`
+- 修复 `mteb_adapter` 对新版 MTEB task layout 的兼容问题
+- 支持从 `task.dataset[subset][split]` 提取 `corpus / queries / relevant_docs / qrels`
+- 支持将 dataset-like rows 转成内部 mapping
+  - 支持 `id`
+  - 支持 `_id`
+  - 转换后移除 `id` / `_id`
+- 保持原有 `task.corpus / task.queries / task.relevant_docs / task.qrels` 路径兼容
 - 补充 `tests/mteb_adapter/test_load.py` 对新版数据布局的覆盖
 
 ## 已验证事项
@@ -32,9 +33,7 @@ artifact store、S3 backend、dataset schema、MTEB adapter、chunking schema、
 - `ruff check src/eval_platform/mteb_adapter/load.py tests/mteb_adapter/test_load.py` 通过
 - `mypy src/eval_platform/mteb_adapter/load.py tests/mteb_adapter/test_load.py` 通过
 - 真实 `mteb.load_data()` 的 `IFIRNFCorpus` smoke 已跑通
-- 使用临时 git repo 与 fake chunker 成功产出：
-  - `normalized_dataset`
-  - `chunked_corpus`
+- 兼容修复后，`normalized_dataset -> fake chunked_corpus` 的本地链路可继续跑通
 
 ## Smoke 结果
 
@@ -53,7 +52,12 @@ artifact store、S3 backend、dataset schema、MTEB adapter、chunking schema、
   - `is_dirty=false`
   - `chunk_params`
 
+## 未合并内容
+
+- task-specific smoke CLI 未合并到主线
+- 如需正式 smoke runner，应后续单独设计通用命令，例如 `evalctl smoke ...`
+
 ## 建议后续方向
 
 - 定义 embedding schema 与 artifact 格式
-- 后续可按需接入真实 external chunker adapter
+- 下一步：`feat/embedding-schema`
