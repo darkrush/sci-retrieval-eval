@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-MTEB per-dataset normalizer registry completed locally and pending PR / merge review.
+Embedding schema and artifact read/write completed locally and pending PR / merge review.
 
 ## Implemented
 
@@ -11,29 +11,24 @@ MTEB per-dataset normalizer registry completed locally and pending PR / merge re
 - Local artifact store (`LocalArtifactStore`)
 - S3 artifact store (`S3ArtifactStore`)
 - Normalized dataset schema and artifact read/write
-- MTEB dataset adapter
-- MTEB dataset layout compatibility fix
-- MTEB per-dataset normalizer registry for:
-  - `LitSearchRetrieval`
-  - `SciFact`
-  - `IFIRScifact`
-  - `IFIRNFCorpus`
-  - `NFCorpus`
-- Chunked corpus schema with external chunker provenance metadata
-- Chunk JSONL helpers (`dump_chunks_jsonl`, `load_chunks_jsonl`)
-- Chunked corpus source artifact dependency in manifest
-- Chunking runner with git clean-state inspection
-- Version-pinned external chunker adapter
-- Sciverse admin-ingest thin adapter with version-pinned repo checks
+- MTEB per-dataset normalizer registry
+- Chunked corpus schema and artifact read/write
+- Chunking runner with version-pinned external Sciverse chunker adapter
+- Embedding schema:
+  - `EmbeddingProvenance`
+  - `EmbeddingRecord`
+  - `EmbeddedCorpus`
+- Embeddings JSONL helpers
+- Embeddings artifact read/write with dimension validation and source dependency metadata
 
 ## In Progress
 
-- PR / merge review for `feat/mteb-normalizer-registry`
-- Follow-up integration work on embedding schema
+- PR / merge review for `feat/embedding-schema`
 
 ## Not Implemented
 
-- Embedding pipeline
+- Real embedding API client
+- Embedding runner / batching / retry
 - ES/Milvus index builder
 - Retrieval pipeline
 - Metrics and reports
@@ -41,9 +36,9 @@ MTEB per-dataset normalizer registry completed locally and pending PR / merge re
 
 ## Current Risks
 
-- The MTEB target set is stable now, but any future new retrieval task should add an explicit normalizer instead of implicit fallback logic.
-- `LitSearchRetrieval` currently requires dataset-specific cleanup for empty corpus rows; future upstream dataset revisions may change the cleanup counts.
+- JSONL is simple and portable, but may not be the final storage format for large-scale embeddings.
+- Embedding provenance is fixed now, but provider-specific metadata may need to expand in later PRs.
 
 ## Next Task
 
-Open and merge the MTEB normalizer registry PR, then start `feat/embedding-schema`.
+Open and merge `feat/embedding-schema`, then start `feat/embedding-runner`.

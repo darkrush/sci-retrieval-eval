@@ -14,16 +14,18 @@
 
 4. Should embeddings be stored as JSONL, Parquet, NumPy shards, or another format?
 5. Should retrieval traces be stored as JSONL only, or also summarized into report JSON?
+6. Should future embeddings artifacts stay one-file JSONL only, or allow sharded outputs for large corpora?
+7. Should provenance eventually record tokenizer / model revision in addition to `model_name` and `provider`?
 
 ## Indexing
 
-6. Should ES and Milvus index names be generated from artifact fingerprints?
-7. Should index artifacts store only metadata, or also sampled validation results?
+8. Should ES and Milvus index names be generated from artifact fingerprints?
+9. Should index artifacts store only metadata, or also sampled validation results?
 
 ## Reranking
 
-8. Should reranker score replace RRF score for final ranking, or should both scores be preserved?
-9. How many candidates should be reranked by default?
+10. Should reranker score replace RRF score for final ranking, or should both scores be preserved?
+11. How many candidates should be reranked by default?
 
 ## Chunking
 
@@ -34,5 +36,5 @@
 
 ## Frontend
 
-10. Should the first frontend be read-only only?
-11. Should evaluation runs be started from CLI first, before adding frontend controls?
+16. Should the first frontend be read-only only?
+17. Should evaluation runs be started from CLI first, before adding frontend controls?
