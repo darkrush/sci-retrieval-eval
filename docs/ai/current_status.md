@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Chunking runner in progress.
+Chunking runner PR ready for merge review.
 
 ## Implemented
 
@@ -20,8 +20,7 @@ Chunking runner in progress.
 
 ## In Progress
 
-- Git clean-state inspection
-- Chunking runner tests and PR review
+Nothing.
 
 ## Not Implemented
 

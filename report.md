@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-artifact store、S3 backend、dataset schema、MTEB adapter、chunking schema 已合并到 `main`。当前在 `feat/chunking-runner` 分支实现 external chunker repo clean-state 检查、commit provenance 与 runner 框架。
+artifact store、S3 backend、dataset schema、MTEB adapter、chunking schema 已合并到 `main`。`feat/chunking-runner` 已完成本地实现与 pre-merge 修补，待 PR / merge review。
 
 ## 已完成事项（main）
 
@@ -11,10 +11,11 @@ artifact store、S3 backend、dataset schema、MTEB adapter、chunking schema �
 - MTEB dataset adapter
 - chunked corpus schema + ChunkerProvenance + artifact IO
 
-## 进行中（feat/chunking-runner）
+## 已完成事项（feat/chunking-runner）
 
 - `inspect_git_repo` / `ensure_git_repo_clean`
 - `ChunkingRunConfig` / `run_chunking` + injectable `ExternalChunker`
+- dirty repo 安全边界、round-trip 与 config validation 测试
 - ADR：`docs/decisions/0005-chunking-runner.md`
 - `tests/chunking/test_git.py` / `tests/chunking/test_runner.py`
 
@@ -32,10 +33,10 @@ artifact store、S3 backend、dataset schema、MTEB adapter、chunking schema �
 
 ## 当前结论
 
-- chunking runner 框架完成后可进入 PR / merge review
+- chunking runner 已完成 pre-merge 修补，可进入 PR / merge review
 - 合并后下一步：`feat/embedding-schema`
 
-## 建议下一阶段目标
+## 建议后续方向
 
-- 实现真实 external chunker adapter
 - 定义 embedding schema 与 artifact 格式
+- 后续可按需接入真实 external chunker adapter
