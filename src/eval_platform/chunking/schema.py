@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
 
 def _non_empty_string(value: str, field_name: str) -> str:
@@ -35,15 +35,22 @@ class ChunkRecord(BaseModel):
     doc_id: str
     text: str
     title: str | None = None
-    chunk_index: int | None = None
-    start_offset: int | None = None
-    end_offset: int | None = None
+    chunk_index: int = Field(ge=0)
+    start_offset: int | None = Field(default=None, ge=0)
+    end_offset: int | None = Field(default=None, ge=0)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("chunk_id", "doc_id", "text")
     @classmethod
     def validate_non_empty(cls, value: str, info: ValidationInfo) -> str:
         return _non_empty_string(value, info.field_name or "field")
+
+    @model_validator(mode="after")
+    def validate_offset_order(self) -> "ChunkRecord":
+        if self.start_offset is not None and self.end_offset is not None:
+            if self.end_offset < self.start_offset:
+                raise ValueError("end_offset must be greater than or equal to start_offset")
+        return self
 
 
 class ChunkedCorpus(BaseModel):

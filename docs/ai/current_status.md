@@ -15,6 +15,7 @@ Chunking schema PR ready for merge review.
 - Chunked corpus schema with external chunker provenance metadata
 - Chunk JSONL helpers (`dump_chunks_jsonl`, `load_chunks_jsonl`)
 - Chunked corpus source artifact dependency in manifest
+- ChunkRecord validation and artifact read/write tests
 
 ## In Progress
 

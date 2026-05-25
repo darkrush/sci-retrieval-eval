@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-MTEB dataset adapter 已合并到 `main`。`feat/chunking-schema` 已完成 schema、JSONL helper 与 source artifact dependency，待 PR / merge review。
+MTEB dataset adapter 已合并到 `main`。`feat/chunking-schema` 已完成 pre-merge 修补（ChunkRecord validation、artifact IO 测试），待 PR / merge review。
 
 ## 已完成事项（main）
 
@@ -13,9 +13,11 @@ MTEB dataset adapter 已合并到 `main`。`feat/chunking-schema` 已完成 sche
 ## 已完成事项（feat/chunking-schema）
 
 - `ChunkRecord` / `ChunkedCorpus` / `ChunkerProvenance`
+- `ChunkRecord` offset 与 index 校验
 - `dump_chunks_jsonl` / `load_chunks_jsonl`
 - `write_chunked_corpus_artifact()` manifest metadata（chunker / chunk_params / counts）
 - `write_chunked_corpus_artifact()` source artifact dependency
+- `read_chunked_corpus_artifact()` round-trip 与 incomplete artifact 行为测试
 - ADR：`docs/decisions/0004-chunked-corpus-schema.md`
 - `tests/chunking/` 单元测试
 
@@ -27,12 +29,11 @@ MTEB dataset adapter 已合并到 `main`。`feat/chunking-schema` 已完成 sche
 ## 已验证事项
 
 - 测试不访问网络、真实 S3 或 git 命令
-- 提权后 `pip install -e ".[dev]"` 通过
-- `pytest` / `ruff check .` / `mypy .` 通过
+- `pytest` / `ruff check .` 通过
 
 ## 当前结论
 
-- chunking schema 功能完整，可进入 PR / merge review
+- chunking schema 已完成 pre-merge 修补，可进入 PR / merge review
 - 合并后下一步：`feat/chunking-runner`
 
 ## 建议下一阶段目标
