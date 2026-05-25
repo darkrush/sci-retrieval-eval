@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-MTEB dataset adapter in progress.
+MTEB dataset adapter PR ready for merge review.
 
 ## Implemented
 
@@ -19,7 +19,7 @@ MTEB dataset adapter in progress.
 
 ## In Progress
 
-- MTEB adapter tests and PR review
+Nothing.
 
 ## Not Implemented
 

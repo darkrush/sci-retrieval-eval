@@ -87,3 +87,24 @@ def test_export_uses_provided_artifact_id(
     )
 
     assert manifest.artifact_id == "custom_scifact_test"
+
+
+def test_export_manifest_system_metadata_is_not_overridden(
+    store: LocalArtifactStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "eval_platform.mteb_adapter.load.load_mteb_retrieval_dataset",
+        lambda task_name, split="test": _fake_dataset(),
+    )
+
+    manifest = export_mteb_retrieval_dataset_artifact(
+        store,
+        "SciFact",
+        split="test",
+        metadata={"source": "wrong", "task_name": "wrong", "split": "wrong"},
+    )
+
+    assert manifest.metadata["source"] == "mteb"
+    assert manifest.metadata["task_name"] == "SciFact"
+    assert manifest.metadata["split"] == "test"

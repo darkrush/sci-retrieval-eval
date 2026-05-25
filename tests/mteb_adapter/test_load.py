@@ -60,6 +60,43 @@ class MissingFieldsTask:
         return None
 
 
+class SplitsParamFakeTask:
+    def __init__(self) -> None:
+        self.used_splits: list[str] | None = None
+        self.corpus = {"doc-1": {"text": "Body"}}
+        self.queries = {"q-1": "query text"}
+        self.relevant_docs = {"q-1": {"doc-1": 1}}
+
+    def load_data(self, splits: list[str] | None = None) -> None:
+        if splits is None:
+            raise TypeError("missing required argument: 'splits'")
+        self.used_splits = splits
+
+
+class SplitKwargFakeTask:
+    def __init__(self) -> None:
+        self.used_split: str | None = None
+        self.corpus = {"doc-1": {"text": "Body"}}
+        self.queries = {"q-1": "query text"}
+        self.relevant_docs = {"q-1": {"doc-1": 1}}
+
+    def load_data(self, split: str | None = None) -> None:
+        if split is None:
+            raise TypeError("missing required argument: 'split'")
+        self.used_split = split
+
+
+class EvalSplitsRuntimeErrorTask:
+    def __init__(self) -> None:
+        self.corpus = {"doc-1": {"text": "Body"}}
+        self.queries = {"q-1": "query text"}
+        self.relevant_docs = {"q-1": {"doc-1": 1}}
+
+    def load_data(self, eval_splits: list[str] | None = None) -> None:
+        if eval_splits is not None:
+            raise RuntimeError("eval_splits failed")
+
+
 def test_extract_from_split_aware_task() -> None:
     task = SplitAwareFakeTask()
 
@@ -122,6 +159,29 @@ def test_load_data_falls_back_when_eval_splits_unsupported() -> None:
     assert queries == {"q-1": "query text"}
     assert qrels == {"q-1": {"doc-1": 1}}
     assert task.fallback_used is True
+
+
+def test_load_data_uses_splits_parameter_when_supported() -> None:
+    task = SplitsParamFakeTask()
+
+    extract_retrieval_data_from_mteb_task(task, split="test")
+
+    assert task.used_splits == ["test"]
+
+
+def test_load_data_uses_split_keyword_when_supported() -> None:
+    task = SplitKwargFakeTask()
+
+    extract_retrieval_data_from_mteb_task(task, split="test")
+
+    assert task.used_split == "test"
+
+
+def test_load_data_does_not_swallow_non_type_error_from_eval_splits() -> None:
+    task = EvalSplitsRuntimeErrorTask()
+
+    with pytest.raises(RuntimeError, match="eval_splits failed"):
+        extract_retrieval_data_from_mteb_task(task, split="test")
 
 
 def test_extract_raises_when_queries_missing() -> None:

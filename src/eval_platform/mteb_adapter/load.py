@@ -38,10 +38,23 @@ def _load_task_data(task: Any, split: str) -> None:
     if load_data is None:
         return
 
-    try:
-        load_data(eval_splits=[split])
-    except TypeError:
-        load_data()
+    attempts = [
+        lambda: load_data(eval_splits=[split]),
+        lambda: load_data(splits=[split]),
+        lambda: load_data(split=split),
+        lambda: load_data(),
+    ]
+
+    last_type_error: TypeError | None = None
+    for attempt in attempts:
+        try:
+            attempt()
+            return
+        except TypeError as exc:
+            last_type_error = exc
+
+    if last_type_error is not None:
+        raise last_type_error
 
 
 def _select_split(data: Any, split: str) -> Any:
@@ -115,13 +128,16 @@ def export_mteb_retrieval_dataset_artifact(
     dataset = load_mteb_retrieval_dataset(task_name, split=split)
     resolved_artifact_id = artifact_id or build_default_artifact_id(task_name, split)
 
-    manifest_metadata = {
-        "source": "mteb",
-        "task_name": task_name,
-        "split": split,
-    }
+    manifest_metadata: dict[str, Any] = {}
     if metadata:
         manifest_metadata.update(metadata)
+    manifest_metadata.update(
+        {
+            "source": "mteb",
+            "task_name": task_name,
+            "split": split,
+        }
+    )
 
     return write_normalized_dataset_artifact(
         store,

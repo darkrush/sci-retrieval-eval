@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Local + S3 artifact store 与 normalized dataset schema 已合并到 `main`。当前在 `feat/mteb-dataset-adapter` 分支实现 MTEB retrieval task 转换层。
+Local + S3 artifact store 与 normalized dataset schema 已合并到 `main`。`feat/mteb-dataset-adapter` 上 MTEB dataset adapter 已完成本地实现，待 PR / merge review。
 
 ## 已完成事项（main）
 
@@ -10,10 +10,12 @@ Local + S3 artifact store 与 normalized dataset schema 已合并到 `main`。�
 - Local artifact store + S3 artifact store
 - normalized dataset schema + JSONL artifact 读写
 
-## 进行中（feat/mteb-dataset-adapter）
+## 已完成事项（feat/mteb-dataset-adapter）
 
 - MTEB retrieval task → `NormalizedDataset` 转换
 - MTEB task 加载与 artifact 导出
+- defensive `load_data` fallback
+- export manifest 系统字段防覆盖
 - `[mteb]` optional dependency
 - ADR：`docs/decisions/0003-mteb-dataset-adapter.md`
 - `tests/mteb_adapter/` 单元测试（fake task，不下载真实数据）
@@ -31,7 +33,7 @@ Local + S3 artifact store 与 normalized dataset schema 已合并到 `main`。�
 
 ## 当前结论
 
-- MTEB adapter 是 chunking 与 evaluation pipeline 的前置步骤
+- MTEB adapter 功能完整，可进入 PR / merge review
 - 合并后下一步：`feat/chunking-schema`
 
 ## 建议下一阶段目标
