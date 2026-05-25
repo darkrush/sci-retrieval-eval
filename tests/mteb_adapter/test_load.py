@@ -97,6 +97,23 @@ class EvalSplitsRuntimeErrorTask:
             raise RuntimeError("eval_splits failed")
 
 
+class DatasetFieldTask:
+    def __init__(self) -> None:
+        self.dataset = {
+            "default": {
+                "test": {
+                    "corpus": [{"id": "doc-1", "text": "Body"}],
+                    "queries": [{"id": "q-1", "text": "query text"}],
+                    "relevant_docs": {"q-1": {"doc-1": 1}},
+                    "top_ranked": {},
+                }
+            }
+        }
+
+    def load_data(self, eval_splits: list[str] | None = None) -> None:
+        return None
+
+
 def test_extract_from_split_aware_task() -> None:
     task = SplitAwareFakeTask()
 
@@ -189,3 +206,13 @@ def test_extract_raises_when_queries_missing() -> None:
 
     with pytest.raises(MTEBAdapterError, match="missing queries"):
         extract_retrieval_data_from_mteb_task(task, split="test")
+
+
+def test_extract_from_dataset_field_layout() -> None:
+    task = DatasetFieldTask()
+
+    corpus, queries, qrels = extract_retrieval_data_from_mteb_task(task, split="test")
+
+    assert corpus == {"doc-1": {"text": "Body"}}
+    assert queries == {"q-1": {"text": "query text"}}
+    assert qrels == {"q-1": {"doc-1": 1}}
