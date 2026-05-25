@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
 from eval_platform.artifacts.manifest import ArtifactManifest
 from eval_platform.artifacts.store import ArtifactStore
@@ -55,6 +55,15 @@ class SciverseAdminIngestChunkerConfig(BaseModel):
     @classmethod
     def validate_non_empty(cls, value: str, info: ValidationInfo) -> str:
         return _non_empty_string(value, info.field_name or "field")
+
+    @model_validator(mode="after")
+    def validate_structured_chunk_bounds(self) -> SciverseAdminIngestChunkerConfig:
+        if self.structured_min_chunk_size > self.structured_max_chunk_size:
+            raise ValueError(
+                "structured_min_chunk_size must be less than or equal to "
+                "structured_max_chunk_size"
+            )
+        return self
 
     @property
     def package_root(self) -> Path:

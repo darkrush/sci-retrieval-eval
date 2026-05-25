@@ -46,15 +46,28 @@ class PythonCallableChunkerConfig(BaseModel):
 
 
 @contextmanager
-def _temporary_sys_path(path: str) -> Iterator[None]:
+def _temporary_module_import_path(path: str, module_name: str) -> Iterator[None]:
+    saved_modules = {
+        name: module
+        for name, module in list(sys.modules.items())
+        if name == module_name or name.startswith(f"{module_name}.")
+    }
+    for name in saved_modules:
+        sys.modules.pop(name, None)
+
     sys.path.insert(0, path)
     try:
+        importlib.invalidate_caches()
         yield
     finally:
         try:
             sys.path.remove(path)
         except ValueError:
             pass
+        for name in list(sys.modules):
+            if name == module_name or name.startswith(f"{module_name}."):
+                sys.modules.pop(name, None)
+        sys.modules.update(saved_modules)
 
 
 class PythonCallableExternalChunker:
@@ -64,8 +77,7 @@ class PythonCallableExternalChunker:
         self._config = config
 
     def _load_callable(self) -> Any:
-        with _temporary_sys_path(self._config.repo_path):
-            importlib.invalidate_caches()
+        with _temporary_module_import_path(self._config.repo_path, self._config.module):
             try:
                 module = importlib.import_module(self._config.module)
             except Exception as exc:  # pragma: no cover - exercised by tests

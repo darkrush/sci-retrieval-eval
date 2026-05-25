@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import textwrap
 import uuid
 from pathlib import Path
@@ -233,3 +234,86 @@ def test_python_callable_external_chunker_raises_when_callable_missing(
     )
     with pytest.raises(ExternalChunkerAdapterError, match="callable not found"):
         list(adapter.chunk_corpus(dataset))
+
+
+def test_python_callable_external_chunker_raises_when_module_missing(
+    tmp_path: Path,
+    dataset: NormalizedDataset,
+) -> None:
+    adapter = PythonCallableExternalChunker(
+        PythonCallableChunkerConfig(
+            repo_path=str(tmp_path),
+            module="missing_chunker_module",
+            callable_name="chunk_dataset",
+        )
+    )
+    with pytest.raises(
+        ExternalChunkerAdapterError,
+        match="Failed to import external chunker module",
+    ):
+        list(adapter.chunk_corpus(dataset))
+
+
+def test_python_callable_external_chunker_isolates_same_module_name_across_repos(
+    tmp_path: Path,
+    dataset: NormalizedDataset,
+) -> None:
+    repo_a = tmp_path / "repo_a"
+    repo_b = tmp_path / "repo_b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    module_name = "chunker_module"
+
+    sentinel_before = object()
+    sys.modules[module_name] = sentinel_before  # type: ignore[assignment]
+
+    _write_module(
+        repo_a,
+        module_name,
+        """
+        def chunk_dataset(dataset):
+            yield {
+                "chunk_id": "a-doc-1",
+                "doc_id": dataset.corpus[0].doc_id,
+                "text": dataset.corpus[0].text,
+                "title": dataset.corpus[0].title,
+                "chunk_index": 0,
+            }
+        """,
+    )
+    _write_module(
+        repo_b,
+        module_name,
+        """
+        def chunk_dataset(dataset):
+            yield {
+                "chunk_id": "b-doc-1",
+                "doc_id": dataset.corpus[0].doc_id,
+                "text": dataset.corpus[0].text,
+                "title": dataset.corpus[0].title,
+                "chunk_index": 0,
+            }
+        """,
+    )
+
+    adapter_a = PythonCallableExternalChunker(
+        PythonCallableChunkerConfig(
+            repo_path=str(repo_a),
+            module=module_name,
+            callable_name="chunk_dataset",
+        )
+    )
+    adapter_b = PythonCallableExternalChunker(
+        PythonCallableChunkerConfig(
+            repo_path=str(repo_b),
+            module=module_name,
+            callable_name="chunk_dataset",
+        )
+    )
+
+    chunks_a = list(adapter_a.chunk_corpus(dataset))
+    chunks_b = list(adapter_b.chunk_corpus(dataset))
+
+    assert [chunk.chunk_id for chunk in chunks_a] == ["a-doc-1"]
+    assert [chunk.chunk_id for chunk in chunks_b] == ["b-doc-1"]
+    assert sys.modules[module_name] is sentinel_before

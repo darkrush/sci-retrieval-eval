@@ -7,6 +7,7 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from eval_platform.artifacts import LocalArtifactStore
 from eval_platform.chunking import (
@@ -250,6 +251,15 @@ def test_sciverse_admin_ingest_external_chunker_requires_package_root(tmp_path: 
 
     with pytest.raises(SciverseAdapterError, match="package root not found"):
         list(chunker.chunk_corpus(dataset))
+
+
+def test_sciverse_admin_ingest_chunker_config_rejects_inverted_structured_bounds() -> None:
+    with pytest.raises(ValidationError, match="structured_min_chunk_size"):
+        SciverseAdminIngestChunkerConfig(
+            repo_path="/tmp/sciverse-repo",
+            structured_min_chunk_size=900,
+            structured_max_chunk_size=800,
+        )
 
 
 def test_run_version_pinned_sciverse_chunking_success(

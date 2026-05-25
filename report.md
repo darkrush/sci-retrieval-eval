@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-`main` 已具备 artifact store、S3 backend、dataset schema、MTEB adapter、chunking schema 和 chunking runner。当前分支在此基础上继续做一层 repo-specific 但仍参数化的接入：`sciverse_clean/agentic-search` 的 `admin-ingest` 真正 chunk 逻辑。
+`main` 已具备 artifact store、S3 backend、dataset schema、MTEB adapter、chunking schema 和 chunking runner。当前分支上的 version-pinned external chunker adapter / Sciverse admin-ingest adapter 已完成本地实现，待 PR / merge review。
 
 ## 已完成事项（main）
 
@@ -38,6 +38,9 @@
   - `NormalizedDataset -> NDJSON -> chunk_ndjson_records -> ChunkRecord`
   - version-pinned helper 写出 `chunked_corpus` artifact
   - dependency、repo provenance、chunk params 正确落入 manifest
+- 通用 `PythonCallableExternalChunker` 已补 `sys.modules` 隔离：
+  - 不同 repo 的同名 module 不再串用
+  - 缺失 module 错误路径已覆盖
 
 ## 当前限制
 

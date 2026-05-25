@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Sciverse-path external chunker adapter in progress.
+Version-pinned external chunker adapter / Sciverse admin-ingest adapter completed locally and pending PR / merge review.
 
 ## Implemented
 
@@ -22,7 +22,7 @@ Sciverse-path external chunker adapter in progress.
 
 ## In Progress
 
-- Sciverse-path adapter review
+- PR / merge review
 - Real `sciverse_clean` smoke validation
 
 ## Not Implemented
