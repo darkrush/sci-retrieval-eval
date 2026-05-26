@@ -25,6 +25,7 @@
     - artifact 内只写 `_MANIFEST.json` 和 `_SUCCESS`
   - 新增 `tests/datasets/test_raw_dataset.py`，覆盖 snapshot-only、本地目录导入、fake S3 source 导入、fake S3 output 和流式 body 场景。
   - 新增 ADR `docs/decisions/0011-raw-dataset-artifact.md`。
+  - 修复 `tests/chunking/test_external_chunking_runner.py` 中不稳定的错误 commit SHA 构造，保证 mismatch 测试一定使用不同 SHA。
 - 为什么这样改：
   - 当前 `normalized_dataset` 直接从内存对象开始，缺少“原始输入先落盘”的可审计层。
   - `raw_dataset` artifact 先固定原始文件身份，后续才能稳定建立 `raw_dataset -> normalized_dataset` 依赖。
@@ -40,6 +41,7 @@
 - `src/eval_platform/datasets/raw.py`
 - `src/eval_platform/datasets/raw_import.py`
 - `tests/datasets/test_raw_dataset.py`
+- `tests/chunking/test_external_chunking_runner.py`
 - `docs/decisions/0011-raw-dataset-artifact.md`
 - `docs/ai/current_status.md`
 - `report.md`
@@ -117,18 +119,16 @@ mypy .
   - 本轮提交前工作区只涉及：
     - `src/eval_platform/datasets/`
     - `tests/datasets/`
+    - `tests/chunking/test_external_chunking_runner.py`
     - `docs/decisions/0011-raw-dataset-artifact.md`
     - `docs/ai/current_status.md`
     - `report.md`
-  - 不包含 `chunking/`、`embeddings/`、`retrieval/`、`metrics/` 等越界目录。
+  - `tests/chunking/test_external_chunking_runner.py` 为基线测试稳定性修复，不改生产 `chunking/` 代码。
+  - 不包含 `src/eval_platform/chunking/`、`embeddings/`、`retrieval/`、`metrics/` 等越界生产目录。
 - `pytest tests/datasets tests/artifacts`：
   - 通过，`89 passed`
 - `pytest`：
-  - 未通过，`1 failed, 335 passed`
-  - 失败点：
-    - `tests/chunking/test_external_chunking_runner.py::test_run_version_pinned_external_chunking_fails_for_commit_mismatch`
-  - 原因：
-    - 这是现有 `chunking` 侧基线失败，不在本轮允许修改范围内
+  - 通过，`336 passed`
 - `ruff check .`：
   - 通过
 - `mypy .`：
@@ -137,7 +137,10 @@ mypy .
 ### 5.3 提交信息
 
 - 是否已提交：`yes`
-- commit subject：`Add raw dataset artifact`
+- commit subjects：
+  - `Add raw dataset artifact`
+  - `Switch raw dataset artifact to snapshot-only`
+  - `Stabilize external chunker SHA mismatch test`
 - 验收者确认的最终 commit：
 
 ## 6. 风险与未决项
