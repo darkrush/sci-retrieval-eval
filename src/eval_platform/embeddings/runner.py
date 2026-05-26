@@ -72,6 +72,17 @@ def run_embedding(
     client: EmbeddingClient,
 ) -> ArtifactManifest:
     """Read chunked corpus, compute embeddings, and write an embeddings artifact."""
+    endpoint_ids = list(config.endpoint_ids)
+    if config.endpoint_id and config.endpoint_id not in endpoint_ids:
+        endpoint_ids.insert(0, config.endpoint_id)
+
+    if len(endpoint_ids) > 1 and config.consistency_check is None:
+        raise EmbeddingRunError(
+            "Multi-endpoint embedding runs require a consistency_check result"
+        )
+    if config.consistency_check is not None and config.consistency_check.passed is False:
+        raise EmbeddingRunError("Embedding consistency check failed; refusing to write artifact")
+
     chunked_corpus = read_chunked_corpus_artifact(source_store, config.source_artifact_id)
     texts = [chunk.text for chunk in chunked_corpus.chunks]
     vectors = client.embed_texts(texts)
@@ -104,9 +115,6 @@ def run_embedding(
         embeddings=records,
         metadata=dict(chunked_corpus.metadata),
     )
-    endpoint_ids = list(config.endpoint_ids)
-    if config.endpoint_id and config.endpoint_id not in endpoint_ids:
-        endpoint_ids.insert(0, config.endpoint_id)
 
     runtime_parameters: dict[str, Any] = {}
     if config.batch_size is not None:

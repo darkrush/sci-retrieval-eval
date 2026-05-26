@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
 
 def _non_empty_string(value: str, field_name: str) -> str:
@@ -67,6 +67,17 @@ class EmbeddingConsistencyCheckResult(BaseModel):
         if not value:
             raise ValueError("endpoint_ids must not be empty")
         return [_non_empty_string(item, "endpoint_ids") for item in value]
+
+    @model_validator(mode="after")
+    def validate_semantics(self) -> EmbeddingConsistencyCheckResult:
+        if self.passed:
+            if self.failure_reason is not None:
+                raise ValueError("failure_reason must be omitted when passed is True")
+        else:
+            if self.failure_reason is None or not self.failure_reason.strip():
+                raise ValueError("failure_reason must be provided when passed is False")
+            self.failure_reason = self.failure_reason.strip()
+        return self
 
 
 class EmbeddingRecord(BaseModel):

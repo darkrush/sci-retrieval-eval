@@ -57,6 +57,21 @@ class FailingEmbeddingClient:
         raise EmbeddingClientError("boom")
 
 
+class EmptyVectorEmbeddingClient:
+    def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
+        return [[] for _ in texts]
+
+
+class NonFiniteEmbeddingClient:
+    def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
+        return [[0.1, math.inf] for _ in texts]
+
+
+class NonNumericEmbeddingClient:
+    def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
+        return [["bad"] for _ in texts]  # type: ignore[list-item]
+
+
 def test_http_embedding_client_config_constructs() -> None:
     config = HTTPEmbeddingClientConfig(endpoint_url="https://example.com/embed")
     assert config.endpoint_url == "https://example.com/embed"
@@ -421,6 +436,81 @@ def test_run_embedding_consistency_check_fails_when_endpoint_client_errors() -> 
     )
     assert result.passed is False
     assert "Endpoint endpoint-b failed" in (result.failure_reason or "")
+
+
+def test_run_embedding_consistency_check_fails_for_empty_vector_result() -> None:
+    config = MultiEndpointEmbeddingConfig(
+        endpoints=[
+            HTTPEmbeddingClientConfig(
+                endpoint_url="https://example.com/a",
+                endpoint_id="endpoint-a",
+            ),
+            HTTPEmbeddingClientConfig(
+                endpoint_url="https://example.com/b",
+                endpoint_id="endpoint-b",
+            ),
+        ]
+    )
+    result = run_embedding_consistency_check(
+        config,
+        [
+            StaticEmbeddingClient([0.1, 0.2]),
+            EmptyVectorEmbeddingClient(),
+        ],
+        input_text="probe text",
+    )
+    assert result.passed is False
+    assert "empty vector" in (result.failure_reason or "")
+
+
+def test_run_embedding_consistency_check_fails_for_non_finite_vector_result() -> None:
+    config = MultiEndpointEmbeddingConfig(
+        endpoints=[
+            HTTPEmbeddingClientConfig(
+                endpoint_url="https://example.com/a",
+                endpoint_id="endpoint-a",
+            ),
+            HTTPEmbeddingClientConfig(
+                endpoint_url="https://example.com/b",
+                endpoint_id="endpoint-b",
+            ),
+        ]
+    )
+    result = run_embedding_consistency_check(
+        config,
+        [
+            StaticEmbeddingClient([0.1, 0.2]),
+            NonFiniteEmbeddingClient(),
+        ],
+        input_text="probe text",
+    )
+    assert result.passed is False
+    assert "non-finite values" in (result.failure_reason or "")
+
+
+def test_run_embedding_consistency_check_fails_for_non_numeric_vector_result() -> None:
+    config = MultiEndpointEmbeddingConfig(
+        endpoints=[
+            HTTPEmbeddingClientConfig(
+                endpoint_url="https://example.com/a",
+                endpoint_id="endpoint-a",
+            ),
+            HTTPEmbeddingClientConfig(
+                endpoint_url="https://example.com/b",
+                endpoint_id="endpoint-b",
+            ),
+        ]
+    )
+    result = run_embedding_consistency_check(
+        config,
+        [
+            StaticEmbeddingClient([0.1, 0.2]),
+            NonNumericEmbeddingClient(),
+        ],
+        input_text="probe text",
+    )
+    assert result.passed is False
+    assert "non-numeric values" in (result.failure_reason or "")
 
 
 def test_run_embedding_consistency_check_raises_for_client_count_mismatch() -> None:

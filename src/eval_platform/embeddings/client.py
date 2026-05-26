@@ -147,6 +147,22 @@ def _validate_probe_vector(vector: list[float], endpoint_id: str) -> list[float]
     return normalized
 
 
+def _failed_consistency_result(
+    *,
+    input_text: str,
+    endpoint_ids: list[str],
+    failure_reason: str,
+    max_abs_diff: float,
+) -> EmbeddingConsistencyCheckResult:
+    return EmbeddingConsistencyCheckResult(
+        input_text=input_text,
+        endpoint_ids=endpoint_ids,
+        passed=False,
+        failure_reason=failure_reason,
+        max_abs_diff=max_abs_diff,
+    )
+
+
 def _default_transport(
     endpoint_url: str,
     payload: bytes,
@@ -330,19 +346,17 @@ def run_embedding_consistency_check(
         try:
             vectors = client.embed_texts([input_text])
         except Exception as exc:
-            return EmbeddingConsistencyCheckResult(
+            return _failed_consistency_result(
                 input_text=input_text,
                 endpoint_ids=endpoint_ids,
-                passed=False,
                 failure_reason=f"Endpoint {endpoint_id} failed: {type(exc).__name__}: {exc}",
                 max_abs_diff=max_abs_diff,
             )
 
         if len(vectors) != 1:
-            return EmbeddingConsistencyCheckResult(
+            return _failed_consistency_result(
                 input_text=input_text,
                 endpoint_ids=endpoint_ids,
-                passed=False,
                 failure_reason=(
                     f"Endpoint {endpoint_id} returned {len(vectors)} vectors "
                     "for one input"
@@ -350,16 +364,23 @@ def run_embedding_consistency_check(
                 max_abs_diff=max_abs_diff,
             )
 
-        current_vector = _validate_probe_vector(vectors[0], endpoint_id)
+        try:
+            current_vector = _validate_probe_vector(vectors[0], endpoint_id)
+        except EmbeddingClientError as exc:
+            return _failed_consistency_result(
+                input_text=input_text,
+                endpoint_ids=endpoint_ids,
+                failure_reason=str(exc),
+                max_abs_diff=max_abs_diff,
+            )
         if reference_vector is None:
             reference_vector = current_vector
             continue
 
         if len(current_vector) != len(reference_vector):
-            return EmbeddingConsistencyCheckResult(
+            return _failed_consistency_result(
                 input_text=input_text,
                 endpoint_ids=endpoint_ids,
-                passed=False,
                 failure_reason=(
                     f"Endpoint {endpoint_id} returned dimension {len(current_vector)} "
                     f"expected {len(reference_vector)}"
@@ -372,10 +393,9 @@ def run_embedding_consistency_check(
         )
         max_abs_diff = max(max_abs_diff, pair_max_abs_diff)
         if pair_max_abs_diff > config.consistency_tolerance.max_abs_diff:
-            return EmbeddingConsistencyCheckResult(
+            return _failed_consistency_result(
                 input_text=input_text,
                 endpoint_ids=endpoint_ids,
-                passed=False,
                 failure_reason=(
                     f"Endpoint {endpoint_id} exceeded max_abs_diff tolerance "
                     f"{config.consistency_tolerance.max_abs_diff}"

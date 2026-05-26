@@ -241,3 +241,60 @@ def test_run_embedding_raises_for_wrong_vector_dimension(
         "litsearch_embeddings",
         EMBEDDINGS_FILENAME,
     )
+
+
+def test_run_embedding_raises_when_consistency_check_failed(
+    source_store: LocalArtifactStore,
+    output_store: LocalArtifactStore,
+) -> None:
+    config = _config()
+    config.endpoint_ids = ["endpoint-a", "endpoint-b"]
+    config.consistency_check = EmbeddingConsistencyCheckResult(
+        input_text="probe text",
+        endpoint_ids=["endpoint-a", "endpoint-b"],
+        passed=False,
+        failure_reason="endpoint mismatch",
+        max_abs_diff=0.1,
+    )
+
+    with pytest.raises(EmbeddingRunError, match="consistency check failed"):
+        run_embedding(source_store, output_store, config, FakeEmbeddingClient(3))
+
+    assert output_store.is_complete(EMBEDDINGS_ARTIFACT_TYPE, "litsearch_embeddings") is False
+    assert not output_store.exists(
+        EMBEDDINGS_ARTIFACT_TYPE,
+        "litsearch_embeddings",
+        EMBEDDINGS_FILENAME,
+    )
+
+
+def test_run_embedding_raises_when_multi_endpoint_check_missing(
+    source_store: LocalArtifactStore,
+    output_store: LocalArtifactStore,
+) -> None:
+    config = _config()
+    config.endpoint_ids = ["endpoint-a", "endpoint-b"]
+
+    with pytest.raises(EmbeddingRunError, match="require a consistency_check result"):
+        run_embedding(source_store, output_store, config, FakeEmbeddingClient(3))
+
+    assert output_store.is_complete(EMBEDDINGS_ARTIFACT_TYPE, "litsearch_embeddings") is False
+    assert not output_store.exists(
+        EMBEDDINGS_ARTIFACT_TYPE,
+        "litsearch_embeddings",
+        EMBEDDINGS_FILENAME,
+    )
+
+
+def test_run_embedding_allows_single_endpoint_without_consistency_check(
+    source_store: LocalArtifactStore,
+    output_store: LocalArtifactStore,
+) -> None:
+    config = _config()
+    config.endpoint_id = "endpoint-a"
+    config.endpoint_ids = ["endpoint-a"]
+
+    manifest = run_embedding(source_store, output_store, config, FakeEmbeddingClient(3))
+
+    assert manifest.artifact_id == "litsearch_embeddings"
+    assert output_store.is_complete(EMBEDDINGS_ARTIFACT_TYPE, "litsearch_embeddings") is True
