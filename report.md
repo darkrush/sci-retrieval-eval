@@ -181,7 +181,9 @@ pytest
 ### 5.3 提交信息
 
 - 是否已提交：`yes`
-- commit subject：`Add raw to normalized dataset adapter`
+- commit subjects：
+  - `Add raw to normalized dataset adapter`
+  - `Add S3 raw file opener`
 - 验收者确认的最终 commit：
 
 ## 6. 风险与未决项
