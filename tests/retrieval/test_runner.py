@@ -19,10 +19,12 @@ from eval_platform.datasets import (
 from eval_platform.retrieval import (
     RETRIEVAL_RUN_ARTIFACT_TYPE,
     RetrievalHit,
+    RetrievalQueryResult,
     RetrievalRunConfig,
     RetrievalRunError,
     read_retrieval_run_artifact,
     run_retrieval,
+    write_retrieval_run_artifact,
 )
 
 
@@ -233,6 +235,46 @@ def test_run_retrieval_hybrid_runs_rrf_and_enriches(store: LocalArtifactStore) -
     assert manifest.metadata["result_record_count"] == 1
 
 
+def test_run_retrieval_defaults_to_replay_trace(store: LocalArtifactStore) -> None:
+    es = FakeElasticsearchClient()
+
+    manifest = run_retrieval(
+        store,
+        store,
+        _config(retrieval_mode="es", milvus_collection_artifact_id=None),
+        es_client=es,
+    )
+    records = read_retrieval_run_artifact(store, "retrieval-1")
+
+    assert manifest.metadata["trace_mode"] == "replay"
+    assert manifest.metadata["execution_mode"] == "live"
+    assert "include_trace" not in manifest.metadata
+    assert records[0].trace is not None
+    assert records[0].trace["rewrite_queries"] == ["alpha query"]
+    assert records[0].trace["per_query"][0]["es_hits"]
+    assert [hit["rank"] for hit in records[0].trace["final_hits"]] == [1, 2]
+
+
+def test_run_retrieval_trace_mode_none_omits_trace(store: LocalArtifactStore) -> None:
+    es = FakeElasticsearchClient()
+
+    manifest = run_retrieval(
+        store,
+        store,
+        _config(
+            retrieval_mode="es",
+            milvus_collection_artifact_id=None,
+            trace_mode="none",
+        ),
+        es_client=es,
+    )
+    records = read_retrieval_run_artifact(store, "retrieval-1")
+
+    assert manifest.metadata["trace_mode"] == "none"
+    assert "include_trace" not in manifest.metadata
+    assert records[0].trace is None
+
+
 def test_run_retrieval_rewrite_dedupes_and_batches_embedding(
     store: LocalArtifactStore,
 ) -> None:
@@ -248,7 +290,6 @@ def test_run_retrieval_rewrite_dedupes_and_batches_embedding(
             retrieval_mode="milvus",
             rewrite_enabled=True,
             sub_queries=2,
-            include_trace=True,
         ),
         es_client=es,
         embedding_client=embedding,
@@ -278,7 +319,6 @@ def test_run_retrieval_rerank_caps_head_and_preserves_tail(
             rerank_enabled=True,
             rerank_candidate_cap=2,
             rerank_cross_path_topk=2,
-            include_trace=True,
         ),
         es_client=es,
         rerank_client=rerank,
@@ -333,3 +373,119 @@ def test_run_retrieval_requires_missing_clients_before_writing(
         )
 
     assert store.is_complete(RETRIEVAL_RUN_ARTIFACT_TYPE, "retrieval-1") is False
+
+
+def test_run_retrieval_replay_copies_source_results(store: LocalArtifactStore) -> None:
+    source_records = [
+        RetrievalQueryResult(
+            query_id="q-1",
+            query_text="alpha query",
+            hits=[
+                RetrievalHit(
+                    rank=1,
+                    chunk_id="chunk-1",
+                    doc_id="doc-1",
+                    text="text",
+                    score=1.0,
+                    recall_source="hybrid",
+                )
+            ],
+            trace={
+                "rewrite_queries": ["alpha query"],
+                "per_query": [{"query": "alpha query", "es_hits": [], "milvus_hits": []}],
+                "rerank_input": [],
+                "rerank_hits": [],
+                "final_hits": [{"rank": 1, "chunk_id": "chunk-1"}],
+            },
+        )
+    ]
+    write_retrieval_run_artifact(store, "source-run", source_records)
+
+    manifest = run_retrieval(
+        store,
+        store,
+        _config(
+            output_artifact_id="replayed-run",
+            execution_mode="replay",
+            replay_source_retrieval_run_artifact_id="source-run",
+        ),
+    )
+    replayed = read_retrieval_run_artifact(store, "replayed-run")
+
+    assert [record.model_dump(mode="json") for record in replayed] == [
+        record.model_dump(mode="json") for record in source_records
+    ]
+    assert manifest.metadata["execution_mode"] == "replay"
+    assert manifest.metadata["replay_source_retrieval_run_artifact_id"] == "source-run"
+    assert ("retrieval_run", "source-run") in [
+        (dep.artifact_type, dep.artifact_id) for dep in manifest.dependencies
+    ]
+
+
+def test_run_retrieval_replay_does_not_call_clients(store: LocalArtifactStore) -> None:
+    source_records = [
+        RetrievalQueryResult(
+            query_id="q-1",
+            query_text="alpha query",
+            hits=[],
+            trace={"rewrite_queries": ["alpha query"], "per_query": [], "final_hits": []},
+        )
+    ]
+    write_retrieval_run_artifact(store, "source-run", source_records)
+    es = FakeElasticsearchClient()
+    milvus = FakeMilvusClient()
+    embedding = FakeEmbeddingClient()
+    rewrite = FakeRewriteClient(["beta query"])
+    rerank = FakeRerankClient()
+
+    run_retrieval(
+        store,
+        store,
+        _config(
+            output_artifact_id="replayed-run",
+            execution_mode="replay",
+            replay_source_retrieval_run_artifact_id="source-run",
+            rewrite_enabled=True,
+            rerank_enabled=True,
+        ),
+        es_client=es,
+        milvus_client=milvus,
+        embedding_client=embedding,
+        rewrite_client=rewrite,
+        rerank_client=rerank,
+    )
+
+    assert es.search_calls == []
+    assert es.enrich_calls == []
+    assert milvus.calls == []
+    assert embedding.calls == []
+    assert rewrite.calls == []
+    assert rerank.calls == []
+
+
+def test_run_retrieval_replay_fails_when_source_lacks_trace(
+    store: LocalArtifactStore,
+) -> None:
+    write_retrieval_run_artifact(
+        store,
+        "source-run",
+        [RetrievalQueryResult(query_id="q-1", query_text="alpha query", hits=[])],
+    )
+
+    with pytest.raises(RetrievalRunError, match="missing replay trace"):
+        run_retrieval(
+            store,
+            store,
+            _config(
+                output_artifact_id="replayed-run",
+                execution_mode="replay",
+                replay_source_retrieval_run_artifact_id="source-run",
+            ),
+        )
+
+    assert store.is_complete(RETRIEVAL_RUN_ARTIFACT_TYPE, "replayed-run") is False
+
+
+def test_retrieval_run_config_replay_requires_source_artifact_id() -> None:
+    with pytest.raises(ValueError, match="replay_source_retrieval_run_artifact_id"):
+        _config(execution_mode="replay")

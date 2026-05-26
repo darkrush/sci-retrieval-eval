@@ -13,7 +13,11 @@ from eval_platform.datasets import (
 )
 from eval_platform.embeddings import EmbeddingClient
 from eval_platform.indexes import ELASTICSEARCH_INDEX_ARTIFACT_TYPE, MILVUS_COLLECTION_ARTIFACT_TYPE
-from eval_platform.retrieval.artifact import write_retrieval_run_artifact
+from eval_platform.retrieval.artifact import (
+    RETRIEVAL_RUN_ARTIFACT_TYPE,
+    read_retrieval_run_artifact,
+    write_retrieval_run_artifact,
+)
 from eval_platform.retrieval.clients import (
     ElasticsearchRetrievalClient,
     MilvusRetrievalClient,
@@ -43,7 +47,9 @@ class RetrievalRunConfig(BaseModel):
     top_k: int = Field(default=10, gt=0)
     query_limit: int | None = Field(default=None, gt=0)
     queries_per_shard: int = Field(default=1000, gt=0)
-    include_trace: bool = False
+    trace_mode: Literal["replay", "none"] = "replay"
+    execution_mode: Literal["live", "replay"] = "live"
+    replay_source_retrieval_run_artifact_id: str | None = None
 
     elasticsearch_index_artifact_id: str | None = None
     milvus_collection_artifact_id: str | None = None
@@ -74,6 +80,7 @@ class RetrievalRunConfig(BaseModel):
     @field_validator(
         "elasticsearch_index_artifact_id",
         "milvus_collection_artifact_id",
+        "replay_source_retrieval_run_artifact_id",
         "index_name",
         "collection_name",
     )
@@ -89,6 +96,14 @@ class RetrievalRunConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_artifact_ids(self) -> RetrievalRunConfig:
+        if self.execution_mode == "replay":
+            if self.replay_source_retrieval_run_artifact_id is None:
+                raise ValueError(
+                    "replay_source_retrieval_run_artifact_id is required for replay execution"
+                )
+            if self.trace_mode != "replay":
+                raise ValueError("execution_mode='replay' requires trace_mode='replay'")
+            return self
         if self.retrieval_mode in {"es", "hybrid"} and self.elasticsearch_index_artifact_id is None:
             raise ValueError("elasticsearch_index_artifact_id is required for es/hybrid retrieval")
         if (
@@ -115,6 +130,9 @@ def run_retrieval(
     rerank_client: RerankClient | None = None,
 ) -> ArtifactManifest:
     """Run retrieval for normalized queries and write a retrieval_run artifact."""
+
+    if config.execution_mode == "replay":
+        return _run_retrieval_replay(source_store, output_store, config)
 
     _validate_runtime_dependencies(
         config,
@@ -168,6 +186,35 @@ def run_retrieval(
     )
 
 
+def _run_retrieval_replay(
+    source_store: ArtifactStore,
+    output_store: ArtifactStore,
+    config: RetrievalRunConfig,
+) -> ArtifactManifest:
+    if config.replay_source_retrieval_run_artifact_id is None:
+        raise RetrievalRunError(
+            "replay_source_retrieval_run_artifact_id is required for replay execution"
+        )
+
+    source_records = read_retrieval_run_artifact(
+        source_store,
+        config.replay_source_retrieval_run_artifact_id,
+    )
+    if any(record.trace is None for record in source_records):
+        raise RetrievalRunError("replay source retrieval_run artifact is missing replay trace")
+
+    return write_retrieval_run_artifact(
+        output_store,
+        config.output_artifact_id,
+        source_records,
+        queries_per_shard=config.queries_per_shard,
+        metadata=_build_manifest_metadata(config),
+        dependencies=_build_dependencies(config),
+        created_by=config.created_by,
+        code_git_sha=config.code_git_sha,
+    )
+
+
 def _validate_runtime_dependencies(
     config: RetrievalRunConfig,
     *,
@@ -209,7 +256,12 @@ def _retrieve_one_query(
     vectors = _embed_query_paths(queries, config, embedding_client)
     hit_lists: list[list[RetrievalHit]] = []
     per_query_trace: list[dict[str, Any]] = []
-    trace: dict[str, Any] = {"rewrite_queries": queries, "per_query": per_query_trace}
+    trace: dict[str, Any] = {
+        "rewrite_queries": queries,
+        "per_query": per_query_trace,
+        "rerank_input": [],
+        "rerank_hits": [],
+    }
 
     for index, query in enumerate(queries):
         hits, es_hits, milvus_hits, fused_hits = _recall_one(
@@ -245,11 +297,12 @@ def _retrieve_one_query(
 
     final_hits = _maybe_rerank(query_text, candidates, config, rerank_client, trace)
     ranked_hits = _rank_hits(final_hits[: config.top_k])
+    trace["final_hits"] = [hit.model_dump(mode="json") for hit in ranked_hits]
     return RetrievalQueryResult(
         query_id=query_id,
         query_text=query_text,
         hits=ranked_hits,
-        trace=trace if config.include_trace else None,
+        trace=trace if config.trace_mode == "replay" else None,
         error=None,
     )
 
@@ -375,7 +428,11 @@ def _build_manifest_metadata(config: RetrievalRunConfig) -> dict[str, Any]:
             "milvus_collection_artifact_id": config.milvus_collection_artifact_id,
             "retrieval_mode": config.retrieval_mode,
             "top_k": config.top_k,
-            "include_trace": config.include_trace,
+            "trace_mode": config.trace_mode,
+            "execution_mode": config.execution_mode,
+            "replay_source_retrieval_run_artifact_id": (
+                config.replay_source_retrieval_run_artifact_id
+            ),
             "sub_queries": config.sub_queries,
             "rewrite_enabled": config.rewrite_enabled,
             "rerank_enabled": config.rerank_enabled,
@@ -397,6 +454,17 @@ def _build_dependencies(config: RetrievalRunConfig) -> list[ArtifactDependency]:
             artifact_id=config.source_normalized_dataset_artifact_id,
         )
     ]
+    if (
+        config.execution_mode == "replay"
+        and config.replay_source_retrieval_run_artifact_id is not None
+    ):
+        dependencies.append(
+            ArtifactDependency(
+                artifact_type=RETRIEVAL_RUN_ARTIFACT_TYPE,
+                artifact_id=config.replay_source_retrieval_run_artifact_id,
+            )
+        )
+        return dependencies
     if config.elasticsearch_index_artifact_id is not None:
         dependencies.append(
             ArtifactDependency(

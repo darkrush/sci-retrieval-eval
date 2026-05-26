@@ -35,6 +35,11 @@
   - `RetrievalRunConfig`
   - `RetrievalRunError`
   - `run_retrieval(...)`
+- 返修 retrieval trace / replay 设计：
+  - 默认 `trace_mode="replay"` 写入 replay trace
+  - `trace_mode="none"` 显式关闭 trace
+  - `execution_mode="replay"` 从既有 `retrieval_run` artifact 复制结果
+  - replay 模式不会调用 rewrite / embedding / ES / Milvus / rerank client
 - 更新：
   - `src/eval_platform/retrieval/__init__.py`
   - `docs/decisions/0019-retrieval-run-artifact.md`
@@ -98,7 +103,9 @@ manifest metadata 记录：
 - `succeeded_query_count`
 - `failed_query_count`
 - `queries_per_shard`
-- `include_trace`
+- `trace_mode`
+- `execution_mode`
+- `replay_source_retrieval_run_artifact_id`
 - `sub_queries`
 - `rewrite_enabled`
 - `rerank_enabled`
@@ -114,6 +121,7 @@ dependencies 记录：
 - `normalized_dataset`
 - `elasticsearch_index`，当 ES recall 或 ES enrich 需要时
 - `milvus_collection`，当 `retrieval_mode in {"milvus", "hybrid"}` 时
+- `retrieval_run`，当 `execution_mode="replay"` 时记录源 run
 
 ## 5. 检索算法对齐
 
@@ -168,6 +176,16 @@ sort = score desc, chunk_id asc
 - rerank 结果后拼接未 rerank tail
 - 最终输出 `top_k`
 
+### 5.5 Trace / Replay
+
+- 默认 `trace_mode="replay"`，每条成功 query result 写入 trace。
+- `trace_mode="none"` 时，query result 的 `trace` 为 `null`，manifest 记录 `trace_mode=none`。
+- replay trace 包含 `rewrite_queries`、`per_query`、每个 query path 的 ES / Milvus / fused hits、`rerank_input`、`rerank_hits` 和 `final_hits`。
+- `execution_mode="replay"` 必须提供 `replay_source_retrieval_run_artifact_id`。
+- replay 会读取源 `retrieval_run` artifact 并把 `query_id` / `query_text` / `hits` / `trace` 原样写入新 artifact。
+- 如果源 run 任何 record 缺少 trace，replay 会失败且不会写出完整 output artifact。
+- replay 模式不会调用 rewrite / embedding / Elasticsearch / Milvus / rerank client。
+
 ## 6. 实现范围
 
 已实现：
@@ -177,7 +195,9 @@ sort = score desc, chunk_id asc
 - runner orchestration
 - fake-client unit tests
 - query-level failure 记录
-- include_trace 开关
+- 默认 replay trace
+- `trace_mode="none"`
+- `execution_mode="replay"`
 
 未实现：
 
@@ -206,7 +226,6 @@ sort = score desc, chunk_id asc
 
 ```bash
 pytest tests/retrieval
-pytest tests/retrieval tests/embeddings tests/indexes
 ruff check .
 mypy .
 pytest
@@ -215,20 +234,18 @@ pytest
 ### 8.2 输出摘要
 
 - `pytest tests/retrieval`
-  - 通过，`12 passed`
-- `pytest tests/retrieval tests/embeddings tests/indexes`
-  - 通过，`180 passed`
+  - 返修后通过，`18 passed`
 - `ruff check .`
-  - 通过
+  - 通过，`All checks passed!`
 - `mypy .`
   - 通过，`Success: no issues found in 117 source files`
 - `pytest`
-  - 通过，`481 passed`
+  - 通过，`487 passed`
 
 ## 9. 风险与未决项
 
 - 本轮没有真实 ES / Milvus / rewrite / rerank adapter，因此真实联调仍需后续 PR。
-- `trace` 可能较大，默认关闭；需要调试时通过 `include_trace=True` 打开。
+- `trace` 可能较大；默认写入 replay trace，如需节省空间必须显式设置 `trace_mode="none"`。
 - query-level error 当前写入 result artifact 并继续 run；后续 metrics 需要明确如何处理失败 query。
 - 真实 adapter 接入时需要检查 ES BM25 字段权重 `title^1.5` / `text` 和 ES enrich 返回顺序。
 
@@ -241,5 +258,5 @@ pytest
 ## 11. 提交信息
 
 - 是否已提交：`yes`
-- commit subject：`Add retrieval run artifact`
-- 验收者确认的最终 commit：
+- commit subject：`Tighten retrieval run replay trace`
+- 验收者确认的最终 commit：由验收者用 `git log -1 --oneline` 确认
