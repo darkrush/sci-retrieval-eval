@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Sequence
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -32,6 +34,8 @@ from eval_platform.indexes import (
     MilvusInsertFailure,
     MilvusInsertResult,
     MilvusRow,
+    PymilvusMilvusClient,
+    PymilvusMilvusClientConfig,
     default_milvus_schema,
     run_milvus_ingest,
 )
@@ -781,3 +785,81 @@ def test_milvus_ingest_config_rejects_non_positive_vector_dim() -> None:
             collection_name="collection",
             vector_dim=0,
         )
+
+
+def test_pymilvus_client_converts_dict_schema_and_index_params(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeDataType:
+        VARCHAR = "VARCHAR"
+        INT64 = "INT64"
+        JSON = "JSON"
+        FLOAT_VECTOR = "FLOAT_VECTOR"
+
+    class FakeSchema:
+        def __init__(self, **kwargs: Any) -> None:
+            self.kwargs = kwargs
+            self.fields: list[tuple[str, str, dict[str, Any]]] = []
+
+        def add_field(self, field_name: str, datatype: str, **kwargs: Any) -> None:
+            self.fields.append((field_name, datatype, kwargs))
+
+    class FakeIndexParams:
+        def __init__(self) -> None:
+            self.indexes: list[dict[str, Any]] = []
+
+        def add_index(self, **kwargs: Any) -> None:
+            self.indexes.append(kwargs)
+
+    class FakeMilvusClientFactory:
+        @staticmethod
+        def create_schema(**kwargs: Any) -> FakeSchema:
+            return FakeSchema(**kwargs)
+
+        @staticmethod
+        def prepare_index_params() -> FakeIndexParams:
+            return FakeIndexParams()
+
+    class RecordingClient:
+        def __init__(self) -> None:
+            self.created: tuple[str, FakeSchema, FakeIndexParams] | None = None
+
+        def create_collection(
+            self,
+            *,
+            collection_name: str,
+            schema: FakeSchema,
+            index_params: FakeIndexParams,
+        ) -> None:
+            self.created = (collection_name, schema, index_params)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "pymilvus",
+        SimpleNamespace(DataType=FakeDataType, MilvusClient=FakeMilvusClientFactory),
+    )
+    recording_client = RecordingClient()
+    client = PymilvusMilvusClient(
+        PymilvusMilvusClientConfig(uri="http://milvus.example:19530"),
+        client=recording_client,
+    )
+
+    client.create_collection(
+        "collection",
+        default_milvus_schema(vector_dim=2),
+        {"index_type": "HNSW", "metric_type": "COSINE", "params": {"M": 8}},
+    )
+
+    assert recording_client.created is not None
+    collection_name, schema, index_params = recording_client.created
+    assert collection_name == "collection"
+    assert ("vector", "FLOAT_VECTOR", {"dim": 2}) in schema.fields
+    assert index_params.indexes == [
+        {
+            "field_name": "vector",
+            "index_type": "HNSW",
+            "index_name": "",
+            "metric_type": "COSINE",
+            "params": {"M": 8},
+        }
+    ]

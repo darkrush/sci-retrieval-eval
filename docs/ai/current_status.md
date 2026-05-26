@@ -28,7 +28,7 @@ Milvus ingest artifact in progress.
 
 ## In Progress
 
-- Milvus ingest PR validation
+- Milvus ingest PR validation; full IFIRNFCorpus ES + Milvus real ingest smoke passed
 
 ## Not Implemented
 

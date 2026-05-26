@@ -188,10 +188,12 @@ class PymilvusMilvusClient:
         schema: dict[str, Any],
         index_params: dict[str, Any],
     ) -> None:
+        pymilvus_schema = self._build_pymilvus_schema(schema)
+        pymilvus_index_params = self._build_pymilvus_index_params(schema, index_params)
         self._client.create_collection(
             collection_name=collection_name,
-            schema=schema,
-            index_params=index_params or None,
+            schema=pymilvus_schema,
+            index_params=pymilvus_index_params,
         )
 
     def drop_collection(self, collection_name: str) -> None:
@@ -230,6 +232,78 @@ class PymilvusMilvusClient:
         if not isinstance(count, int):
             raise MilvusIngestError("Milvus count query missing integer count")
         return count
+
+    @staticmethod
+    def _build_pymilvus_schema(schema: dict[str, Any]) -> Any:
+        try:
+            from pymilvus import DataType, MilvusClient  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise MilvusIngestError(
+                "pymilvus is required for PymilvusMilvusClient; install the milvus extra"
+            ) from exc
+
+        schema_obj = MilvusClient.create_schema(
+            auto_id=bool(schema.get("auto_id", False)),
+            description=schema.get("description", ""),
+        )
+        for field in schema.get("fields", []):
+            if not isinstance(field, dict):
+                raise MilvusIngestError("Milvus schema field must be a mapping")
+            field_name = field.get("name")
+            dtype_name = field.get("dtype")
+            if not isinstance(field_name, str) or not field_name.strip():
+                raise MilvusIngestError("Milvus schema field missing name")
+            if not isinstance(dtype_name, str) or not dtype_name.strip():
+                raise MilvusIngestError(f"Milvus schema field {field_name} missing dtype")
+            datatype = getattr(DataType, dtype_name.upper(), None)
+            if datatype is None:
+                raise MilvusIngestError(f"Unsupported Milvus dtype: {dtype_name}")
+
+            field_kwargs = {
+                key: value
+                for key, value in field.items()
+                if key not in {"name", "dtype"} and value is not None
+            }
+            schema_obj.add_field(
+                field_name=field_name,
+                datatype=datatype,
+                **field_kwargs,
+            )
+        return schema_obj
+
+    @staticmethod
+    def _build_pymilvus_index_params(
+        schema: dict[str, Any],
+        index_params: dict[str, Any],
+    ) -> Any:
+        try:
+            from pymilvus import MilvusClient  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise MilvusIngestError(
+                "pymilvus is required for PymilvusMilvusClient; install the milvus extra"
+            ) from exc
+
+        vector_field = _find_vector_field_name(schema)
+        raw_params = dict(index_params)
+        index_type = str(raw_params.pop("index_type", "AUTOINDEX")).upper()
+        metric_type = str(raw_params.pop("metric_type", "COSINE")).upper()
+        index_name = str(raw_params.pop("index_name", ""))
+        params = raw_params.pop("params", None)
+        if params is None:
+            params = {}
+        if not isinstance(params, dict):
+            raise MilvusIngestError("Milvus index params.params must be a mapping")
+
+        pymilvus_index_params = MilvusClient.prepare_index_params()
+        pymilvus_index_params.add_index(
+            field_name=vector_field,
+            index_type=index_type,
+            index_name=index_name,
+            metric_type=metric_type,
+            params=params,
+            **raw_params,
+        )
+        return pymilvus_index_params
 
 
 def default_milvus_schema(
@@ -280,6 +354,15 @@ def stable_schema_sha256(schema: dict[str, Any]) -> str:
 
     payload = json.dumps(schema, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _find_vector_field_name(schema: dict[str, Any]) -> str:
+    for field in schema.get("fields", []):
+        if isinstance(field, dict) and str(field.get("dtype", "")).upper() == "FLOAT_VECTOR":
+            field_name = field.get("name")
+            if isinstance(field_name, str) and field_name.strip():
+                return field_name
+    raise MilvusIngestError("Milvus schema must contain a FLOAT_VECTOR field")
 
 
 def _safe_user_metadata(metadata: dict[str, Any]) -> dict[str, Any]:

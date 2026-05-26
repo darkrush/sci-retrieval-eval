@@ -20,6 +20,7 @@
   - 定义 `MilvusIngestConfig`
   - 定义 `MilvusClientProtocol`
   - 定义 `PymilvusMilvusClient`
+  - `PymilvusMilvusClient` 将内部 dict schema / index params 转换为 pymilvus 需要的 `CollectionSchema` / `IndexParams`
   - 实现 `run_milvus_ingest(...)`
 - 更新 `src/eval_platform/indexes/__init__.py`
   - 导出 Milvus ingest 相关公共接口
@@ -27,6 +28,7 @@
   - 新增 optional dependency：`milvus = ["pymilvus>=2.4"]`
 - 新增 `tests/indexes/test_milvus_ingest.py`
   - 使用 fake Milvus client 覆盖成功路径、失败路径、shard 对齐、manifest、进度回调和流式读取约束
+  - 使用 fake `pymilvus` module 覆盖生产 adapter 的 schema / index params 转换逻辑，不依赖真实 pymilvus 服务
 - 新增 ADR：
   - `docs/decisions/0016-milvus-collection-artifact.md`
 - 更新：
@@ -49,7 +51,8 @@
 - 如果是，改动理由：无
 - 是否修改 ES ingest 语义：`no`
 - 是否实现 retrieval / metrics / frontend：`no`
-- 是否访问真实 Milvus：`no`
+- 单元测试是否访问真实 Milvus：`no`
+- 验收 smoke 是否访问真实 Milvus：`yes`
 
 ## 4. 实现说明
 
@@ -199,6 +202,7 @@ Manifest metadata 记录：
    - insert
    - flush
    - count
+5. 真实 Milvus smoke 曾暴露出 dict schema 不能直接传给 pymilvus 的问题；已修复为显式构建 `CollectionSchema` 和 `IndexParams`。
 
 ### 4.6 失败路径
 
@@ -231,20 +235,37 @@ pytest
 ### 5.2 输出摘要
 
 - `pytest tests/indexes tests/chunking/test_artifact.py tests/embeddings/test_artifact.py`：
-  - 已运行，`86 passed`
+  - 已运行，`87 passed`
 - `ruff check .`：
   - 已运行，通过
 - `mypy .`：
   - 已运行，通过，`Success: no issues found in 103 source files`
 - `pytest`：
-  - 通过，`431 passed`
+  - 通过，`432 passed`
+
+### 5.3 真实入库 smoke
+
+使用已有完整 IFIRNFCorpus artifact：
+
+- `chunked_corpus/ifir_nfcorpus_full_20260526_1945_chunks`
+- `embeddings/ifir_nfcorpus_full_20260526_1945_embeddings`
+
+实际写入结果：
+
+- ES index：`ifir_nfcorpus_real_ingest_20260526_220102_es`
+- ES artifact：`s3://scibase-service/test_sciverse_benchmark/elasticsearch_index/ifir_nfcorpus_real_ingest_20260526_220102_es_index/`
+- ES `indexed_count=11962`
+- ES `verified_document_count=11962`
+- Milvus collection：`ifir_nfcorpus_real_ingest_20260526_220102_milvus`
+- Milvus artifact：`s3://scibase-service/test_sciverse_benchmark/milvus_collection/ifir_nfcorpus_real_ingest_20260526_220102_milvus_collection/`
+- Milvus `inserted_count=11962`
+- Milvus `verified_entity_count=11962`
 
 ## 6. 风险与未决项
 
 - 已知风险：
-  - 本轮没有真实 Milvus 集成测试，只使用 fake client 验证主库逻辑。
   - `PymilvusMilvusClient` 是最小 lazy-import adapter，只覆盖本轮 ingest 所需 API。
-  - `PymilvusMilvusClient.count_entities(...)` 使用 `query(..., output_fields=["count(*)"])`，真实 Milvus 环境中的 count 行为仍需后续 smoke 验证。
+  - 真实 smoke 已验证 `create_collection`、insert、flush、count 和 manifest 写入，但还没有纳入自动化集成测试。
 - 未覆盖场景：
   - 不覆盖正式 corpus build runner。
   - 不覆盖 retrieval / metrics。
