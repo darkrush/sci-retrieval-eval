@@ -188,18 +188,18 @@ pytest
 - `git diff --name-only origin/main...HEAD`：
   - 不包含 `chunking/`、`datasets/`、`embeddings/`、`indexes/`、`retrieval/`、`metrics/`
 - `pytest tests/config tests/test_cli.py`：
-  - 通过，`10 passed`
+  - 通过，`13 passed`
 - `ruff check .`：
   - 通过
 - `mypy .`：
   - 通过，`Success: no issues found in 91 source files`
 - `pytest`：
-  - 通过，`351 passed`
+  - 通过，`354 passed`
 
 ### 5.3 提交信息
 
 - 是否已提交：`yes`
-- commit subject：`Add platform config system`
+- commit subject：`Harden platform config validation`
 - 验收者确认的最终 commit：
 
 ## 6. 风险与未决项
