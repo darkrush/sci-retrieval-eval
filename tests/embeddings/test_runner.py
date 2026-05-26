@@ -10,6 +10,8 @@ from eval_platform.artifacts import LocalArtifactStore
 from eval_platform.chunking import ChunkRecord, write_chunked_corpus_artifact
 from eval_platform.chunking.schema import ChunkedCorpus
 from eval_platform.embeddings import (
+    EMBEDDINGS_ARTIFACT_TYPE,
+    EMBEDDINGS_FILENAME,
     EmbeddedCorpus,
     EmbeddingRunConfig,
     EmbeddingRunError,
@@ -71,7 +73,8 @@ def _config() -> EmbeddingRunConfig:
         output_artifact_id="litsearch_embeddings",
         model_name="fake-embedding-model",
         embedding_dim=3,
-        provider="fake",
+        provider="fake-provider",
+        api_version="v1",
         normalized=True,
     )
 
@@ -153,12 +156,60 @@ def test_run_embedding_records_source_dependency(
     assert manifest.dependencies[0].artifact_type == "chunked_corpus"
 
 
+def test_run_embedding_records_provenance_metadata(
+    source_store: LocalArtifactStore,
+    output_store: LocalArtifactStore,
+) -> None:
+    manifest = run_embedding(source_store, output_store, _config(), FakeEmbeddingClient(3))
+
+    provenance = manifest.metadata["provenance"]
+    assert provenance["model_name"] == "fake-embedding-model"
+    assert provenance["provider"] == "fake-provider"
+    assert provenance["api_version"] == "v1"
+    assert provenance["embedding_dim"] == 3
+    assert provenance["normalized"] is True
+    assert manifest.metadata["embedding_count"] == 2
+    assert manifest.metadata["unique_chunk_count"] == 2
+    assert manifest.metadata["unique_doc_count"] == 2
+    assert manifest.metadata["embedding_dim"] == 3
+
+
+def test_run_embedding_runner_metadata_cannot_override_system_fields(
+    source_store: LocalArtifactStore,
+    output_store: LocalArtifactStore,
+) -> None:
+    config = _config()
+    config.metadata = {
+        "embedding_count": 999,
+        "unique_chunk_count": 999,
+        "unique_doc_count": 999,
+        "embedding_dim": 999,
+        "provenance": {"model_name": "wrong"},
+        "stage": "embedding",
+    }
+
+    manifest = run_embedding(source_store, output_store, config, FakeEmbeddingClient(3))
+
+    assert manifest.metadata["embedding_count"] == 2
+    assert manifest.metadata["unique_chunk_count"] == 2
+    assert manifest.metadata["unique_doc_count"] == 2
+    assert manifest.metadata["embedding_dim"] == 3
+    assert manifest.metadata["stage"] == "embedding"
+    assert manifest.metadata["provenance"]["model_name"] == "fake-embedding-model"
+
+
 def test_run_embedding_raises_for_wrong_vector_count(
     source_store: LocalArtifactStore,
     output_store: LocalArtifactStore,
 ) -> None:
     with pytest.raises(EmbeddingRunError, match="different number of vectors"):
         run_embedding(source_store, output_store, _config(), WrongCountEmbeddingClient())
+    assert output_store.is_complete(EMBEDDINGS_ARTIFACT_TYPE, "litsearch_embeddings") is False
+    assert not output_store.exists(
+        EMBEDDINGS_ARTIFACT_TYPE,
+        "litsearch_embeddings",
+        EMBEDDINGS_FILENAME,
+    )
 
 
 def test_run_embedding_raises_for_wrong_vector_dimension(
@@ -167,3 +218,9 @@ def test_run_embedding_raises_for_wrong_vector_dimension(
 ) -> None:
     with pytest.raises(EmbeddingRunError, match="unexpected dimension"):
         run_embedding(source_store, output_store, _config(), WrongDimEmbeddingClient())
+    assert output_store.is_complete(EMBEDDINGS_ARTIFACT_TYPE, "litsearch_embeddings") is False
+    assert not output_store.exists(
+        EMBEDDINGS_ARTIFACT_TYPE,
+        "litsearch_embeddings",
+        EMBEDDINGS_FILENAME,
+    )

@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-本 PR 实现 embedding 计算 runner 和 S3 artifact 上传。
+Embedding runner to S3 PR ready for merge review.
 
 输入链路：
 
@@ -80,4 +80,4 @@
 ## 建议后续方向
 
 - 合并 `feat/embedding-runner-s3`
-- 然后开始 `feat/embedding-api-client` 或 `feat/milvus-index-schema`
+- 然后开始 `feat/embedding-api-client`

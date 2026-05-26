@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Embedding runner to S3 in progress.
+Embedding runner to S3 PR ready for merge review.
 
 ## Implemented
 
@@ -16,8 +16,7 @@ Embedding runner to S3 in progress.
 
 ## In Progress
 
-- Embedding artifact tests
-- S3 upload tests
+- PR / merge review for `feat/embedding-runner-s3`
 
 ## Not Implemented
 
@@ -30,4 +29,4 @@ Embedding runner to S3 in progress.
 
 ## Next Task
 
-Open and merge embedding runner S3 PR, then start `feat/embedding-api-client` or `feat/milvus-index-schema`.
+Open and merge embedding runner S3 PR, then start `feat/embedding-api-client`.
