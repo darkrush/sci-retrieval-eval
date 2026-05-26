@@ -36,7 +36,7 @@ Registered normalizers:
 | `IFIRScifact` | `ifir_scifact_raw_jsonl_tsv_v1` | `jsonl_tsv` | `true` |
 | `NFCorpus` | `nfcorpus_raw_jsonl_tsv_v1` | `jsonl_tsv` | `false` |
 | `SciFact` | `scifact_raw_jsonl_tsv_v1` | `jsonl_tsv` | `false` |
-| `LitSearchRetrieval` | `litsearch_raw_parquet_v1` | `parquet` | `false` |
+| `LitSearchRetrieval` | `litsearch_raw_parquet_v1` | `parquet_dir_shards` | `false` |
 
 For `jsonl_tsv` raw datasets:
 
@@ -47,11 +47,18 @@ For `jsonl_tsv` raw datasets:
 
 For `LitSearchRetrieval` parquet raw datasets:
 
-- `corpus.parquet`
-- `queries.parquet`
-- `qrels.parquet`
+- `corpus/*.parquet`
+- `queries/*.parquet`
+- `qrels/*.parquet`
 
 Parquet reading uses lazy imports. It first tries `pandas`, then `pyarrow`; if neither is available, normalization raises a clear `RawNormalizeError`.
+
+Parquet shard handling is deterministic:
+
+- Each shard group is discovered by relative path.
+- Shards are sorted by `PurePosixPath(file.path).as_posix()`.
+- Rows from all shards in the group are merged before constructing `NormalizedDataset`.
+- Missing shard groups fail with a message naming `corpus/*.parquet`, `queries/*.parquet`, or `qrels/*.parquet`.
 
 The `normalized_dataset` manifest continues to record the raw upstream identity and now also records:
 
@@ -72,7 +79,7 @@ Positive effects:
 Tradeoffs:
 
 - This still does not run a real five-dataset external smoke against production S3.
-- LitSearch requires `pandas` or `pyarrow` only when the parquet normalizer is actually used.
+- LitSearch requires `pandas` or `pyarrow` only when the parquet shard normalizer is actually used.
 - The one-off scripts remain as historical references and are not runtime dependencies.
 
 Non-goals:

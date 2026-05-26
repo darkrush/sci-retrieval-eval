@@ -34,7 +34,7 @@ class RawNormalizerSpec(BaseModel):
 
     dataset_name: str
     normalizer_name: str
-    raw_format: Literal["jsonl_tsv", "parquet"]
+    raw_format: Literal["jsonl_tsv", "parquet_dir_shards"]
     has_instructions: bool = False
 
 
@@ -64,7 +64,7 @@ RAW_NORMALIZER_SPECS: dict[str, RawNormalizerSpec] = {
     "LitSearchRetrieval": RawNormalizerSpec(
         dataset_name="LitSearchRetrieval",
         normalizer_name="litsearch_raw_parquet_v1",
-        raw_format="parquet",
+        raw_format="parquet_dir_shards",
     ),
 }
 SUPPORTED_RAW_NORMALIZER_DATASET_NAMES = frozenset(RAW_NORMALIZER_SPECS)
@@ -309,43 +309,89 @@ def _read_parquet_records(file: RawDatasetFile, opener: RawFileOpener) -> list[d
     return list(pq.read_table(io.BytesIO(payload)).to_pylist())
 
 
+def _find_parquet_shard_files(
+    files: list[RawDatasetFile],
+    directory: str,
+) -> list[RawDatasetFile]:
+    normalized_directory = PurePosixPath(directory).as_posix()
+    shard_files = [
+        file
+        for file in files
+        if PurePosixPath(file.path).parent.as_posix() == normalized_directory
+        and PurePosixPath(file.path).suffix == ".parquet"
+    ]
+    if not shard_files:
+        raise RawNormalizeError(
+            f"Required raw parquet shards missing from snapshot: {normalized_directory}/*.parquet"
+        )
+    return sorted(shard_files, key=lambda file: PurePosixPath(file.path).as_posix())
+
+
+def _read_parquet_shard_rows(
+    shard_files: list[RawDatasetFile],
+    opener: RawFileOpener,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for shard_file in shard_files:
+        rows.extend(_read_parquet_records(shard_file, opener))
+    return rows
+
+
 def _load_parquet_dataset(
     snapshot_files: list[RawDatasetFile],
     opener: RawFileOpener,
     *,
     progress_reporter: ProgressReporter | None = None,
 ) -> NormalizedDataset:
-    corpus_file = _find_required_file(snapshot_files, "corpus.parquet")
-    queries_file = _find_required_file(snapshot_files, "queries.parquet")
-    qrels_file = _find_required_file(snapshot_files, "qrels.parquet")
+    corpus_files = _find_parquet_shard_files(snapshot_files, "corpus")
+    queries_files = _find_parquet_shard_files(snapshot_files, "queries")
+    qrels_files = _find_parquet_shard_files(snapshot_files, "qrels")
     total_steps = 3
 
-    corpus_rows = _read_parquet_records(corpus_file, opener)
+    corpus_rows = _read_parquet_shard_rows(corpus_files, opener)
     report_progress(
         progress_reporter,
         stage="raw_to_normalized",
         current=1,
         total=total_steps,
         message="Loaded raw corpus records",
-        metadata={"kind": "corpus", "record_count": len(corpus_rows), "path": corpus_file.path},
+        metadata={
+            "kind": "corpus",
+            "record_count": len(corpus_rows),
+            "path": "corpus/*.parquet",
+            "shard_count": len(corpus_files),
+            "shard_paths": [file.path for file in corpus_files],
+        },
     )
-    query_rows = _read_parquet_records(queries_file, opener)
+    query_rows = _read_parquet_shard_rows(queries_files, opener)
     report_progress(
         progress_reporter,
         stage="raw_to_normalized",
         current=2,
         total=total_steps,
         message="Loaded raw query records",
-        metadata={"kind": "queries", "record_count": len(query_rows), "path": queries_file.path},
+        metadata={
+            "kind": "queries",
+            "record_count": len(query_rows),
+            "path": "queries/*.parquet",
+            "shard_count": len(queries_files),
+            "shard_paths": [file.path for file in queries_files],
+        },
     )
-    qrel_rows = _read_parquet_records(qrels_file, opener)
+    qrel_rows = _read_parquet_shard_rows(qrels_files, opener)
     report_progress(
         progress_reporter,
         stage="raw_to_normalized",
         current=3,
         total=total_steps,
         message="Loaded raw qrel rows",
-        metadata={"kind": "qrels", "record_count": len(qrel_rows), "path": qrels_file.path},
+        metadata={
+            "kind": "qrels",
+            "record_count": len(qrel_rows),
+            "path": "qrels/*.parquet",
+            "shard_count": len(qrels_files),
+            "shard_paths": [file.path for file in qrels_files],
+        },
     )
     return NormalizedDataset(
         corpus=_rows_to_corpus(corpus_rows),
@@ -372,11 +418,20 @@ def _resolve_raw_source_uri(
     snapshot_uri: str,
     spec: RawNormalizerSpec,
 ) -> str:
-    target_path = "qrels/test.tsv" if spec.raw_format == "jsonl_tsv" else "qrels.parquet"
-    suffix = f"/{target_path}"
+    if spec.raw_format == "jsonl_tsv":
+        target_paths = ["qrels/test.tsv"]
+    elif spec.raw_format == "parquet_dir_shards":
+        target_paths = [
+            PurePosixPath(file.path).as_posix()
+            for file in _find_parquet_shard_files(snapshot_files, "qrels")
+        ]
+    else:
+        target_paths = []
+
     for candidate in snapshot_files:
-        if PurePosixPath(candidate.path).as_posix() == target_path:
-            return candidate.uri.rsplit(suffix, 1)[0]
+        candidate_path = PurePosixPath(candidate.path).as_posix()
+        if candidate_path in target_paths:
+            return candidate.uri.rsplit(f"/{candidate_path}", 1)[0]
     return snapshot_uri
 
 
@@ -399,7 +454,7 @@ def normalize_raw_dataset_artifact(
             spec,
             progress_reporter=progress_reporter,
         )
-    elif spec.raw_format == "parquet":
+    elif spec.raw_format == "parquet_dir_shards":
         dataset = _load_parquet_dataset(
             snapshot.files,
             opener,

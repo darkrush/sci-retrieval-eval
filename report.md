@@ -17,9 +17,10 @@
   - 新增 `RAW_NORMALIZER_SPECS`
   - 新增 `SUPPORTED_RAW_NORMALIZER_DATASET_NAMES`
   - 支持 `jsonl_tsv` raw 格式
-  - 支持 `LitSearchRetrieval` 的 parquet raw 格式
+  - 支持 `LitSearchRetrieval` 的 parquet 目录分片 raw 格式
   - 校验 unsupported dataset 和 normalizer mismatch
   - manifest metadata 增加 `raw_format` / `has_instructions`
+  - 返工修复 `LitSearchRetrieval` 真实 raw parquet 目录分片布局
 - 更新 `src/eval_platform/corpus_build/runner.py`
   - `CorpusBuildConfig.dataset_name` 改为从 raw normalizer registry 取 allowlist
   - 不改变 runner 阶段顺序和 artifact id 串联方式
@@ -42,7 +43,7 @@
 | `IFIRScifact` | `ifir_scifact_raw_jsonl_tsv_v1` | `jsonl_tsv` | `true` |
 | `NFCorpus` | `nfcorpus_raw_jsonl_tsv_v1` | `jsonl_tsv` | `false` |
 | `SciFact` | `scifact_raw_jsonl_tsv_v1` | `jsonl_tsv` | `false` |
-| `LitSearchRetrieval` | `litsearch_raw_parquet_v1` | `parquet` | `false` |
+| `LitSearchRetrieval` | `litsearch_raw_parquet_v1` | `parquet_dir_shards` | `false` |
 
 ## 4. 实现说明
 
@@ -82,9 +83,16 @@
 
 读取文件：
 
-- `corpus.parquet`
-- `queries.parquet`
-- `qrels.parquet`
+- `corpus/*.parquet`
+- `queries/*.parquet`
+- `qrels/*.parquet`
+
+目录分片策略：
+
+- 每组 shard 按 `PurePosixPath(file.path).as_posix()` 排序读取。
+- 同组多个 parquet shard 的 rows 合并后再构造 `NormalizedDataset`。
+- 缺少 `corpus/*.parquet`、`queries/*.parquet` 或 `qrels/*.parquet` 时抛 `RawNormalizeError`。
+- `raw_source_uri` 从 shard 相对路径回退到 raw prefix，例如 `s3://bucket/raw/litsearch`。
 
 Parquet 依赖策略：
 
@@ -158,15 +166,15 @@ pytest
 ### 6.2 输出摘要
 
 - `pytest tests/datasets/test_raw_normalize.py tests/corpus_build/test_runner.py`
-  - 通过，`39 passed`
+  - 通过，`43 passed`
 - `pytest tests/datasets tests/corpus_build`
-  - 通过，`85 passed`
+  - 通过，`89 passed`
 - `ruff check .`
   - 通过
 - `mypy .`
   - 通过，`Success: no issues found in 107 source files`
 - `pytest`
-  - 通过，`464 passed`
+  - 通过，`468 passed`
 
 ## 7. 风险与未决项
 
@@ -182,7 +190,7 @@ pytest
 - 需要验收者重点检查：
   - 五个 dataset 是否都有明确 registry spec。
   - unsupported dataset 和 normalizer mismatch 是否拒绝。
-  - LitSearch parquet lazy import 和错误处理是否清晰。
+  - LitSearch parquet 目录分片排序、合并、缺组错误和 lazy import 是否清晰。
   - runner 是否只从 registry 放开 allowlist，没有复制 raw parsing。
 
 ## 8. 交付结论
@@ -194,5 +202,5 @@ pytest
 ## 9. 提交信息
 
 - 是否已提交：`yes`
-- commit subject：`Add raw normalizers for target datasets`
+- commit subject：`Fix LitSearch parquet shard normalization`
 - 验收者确认的最终 commit：

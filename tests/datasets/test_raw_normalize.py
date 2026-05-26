@@ -144,31 +144,26 @@ def _ifir_nfcorpus_snapshot() -> tuple[RawDatasetSnapshot, FakeRawFileOpener]:
     return _jsonl_tsv_snapshot()
 
 
-def _litsearch_snapshot() -> tuple[RawDatasetSnapshot, FakeRawFileOpener]:
+def _litsearch_snapshot(
+    *,
+    shard_paths: tuple[str, ...] = (
+        "corpus/test-00000-of-00001.parquet",
+        "queries/test-00000-of-00001.parquet",
+        "qrels/test-00000-of-00001.parquet",
+    ),
+) -> tuple[RawDatasetSnapshot, FakeRawFileOpener]:
     uris_to_payloads = {
-        "s3://bucket/raw/litsearch/corpus.parquet": b"fake-corpus",
-        "s3://bucket/raw/litsearch/queries.parquet": b"fake-queries",
-        "s3://bucket/raw/litsearch/qrels.parquet": b"fake-qrels",
+        f"s3://bucket/raw/litsearch/{path}": f"fake-{path}".encode()
+        for path in shard_paths
     }
     files = [
         RawDatasetFile(
-            path="corpus.parquet",
-            uri="s3://bucket/raw/litsearch/corpus.parquet",
-            size_bytes=len(uris_to_payloads["s3://bucket/raw/litsearch/corpus.parquet"]),
-            sha256="4" * 64,
-        ),
-        RawDatasetFile(
-            path="queries.parquet",
-            uri="s3://bucket/raw/litsearch/queries.parquet",
-            size_bytes=len(uris_to_payloads["s3://bucket/raw/litsearch/queries.parquet"]),
-            sha256="5" * 64,
-        ),
-        RawDatasetFile(
-            path="qrels.parquet",
-            uri="s3://bucket/raw/litsearch/qrels.parquet",
-            size_bytes=len(uris_to_payloads["s3://bucket/raw/litsearch/qrels.parquet"]),
-            sha256="6" * 64,
-        ),
+            path=path,
+            uri=f"s3://bucket/raw/litsearch/{path}",
+            size_bytes=len(uris_to_payloads[f"s3://bucket/raw/litsearch/{path}"]),
+            sha256=f"{index % 16:x}" * 64,
+        )
+        for index, path in enumerate(shard_paths, start=4)
     ]
     snapshot = RawDatasetSnapshot(
         source_type="s3_prefix",
@@ -368,11 +363,13 @@ def test_normalize_litsearch_parquet_dataset(
         opener: object,
     ) -> list[dict[str, object]]:
         rows_by_path: dict[str, list[dict[str, object]]] = {
-            "corpus.parquet": [
+            "corpus/test-00000-of-00001.parquet": [
                 {"_id": "doc-1", "title": "Doc 1", "text": "First document."}
             ],
-            "queries.parquet": [{"_id": "q-1", "text": "first query"}],
-            "qrels.parquet": [{"query-id": "q-1", "corpus-id": "doc-1", "score": 1}],
+            "queries/test-00000-of-00001.parquet": [{"_id": "q-1", "text": "first query"}],
+            "qrels/test-00000-of-00001.parquet": [
+                {"query-id": "q-1", "corpus-id": "doc-1", "score": 1}
+            ],
         }
         return rows_by_path[file.path]
 
@@ -394,9 +391,109 @@ def test_normalize_litsearch_parquet_dataset(
     assert loaded.queries[0].query_id == "q-1"
     assert loaded.qrels[0].relevance == 1.0
     assert manifest.metadata["normalizer_name"] == "litsearch_raw_parquet_v1"
-    assert manifest.metadata["raw_format"] == "parquet"
+    assert manifest.metadata["raw_format"] == "parquet_dir_shards"
     assert manifest.metadata["has_instructions"] is False
     assert manifest.metadata["raw_source_uri"] == "s3://bucket/raw/litsearch"
+
+
+def test_normalize_litsearch_parquet_merges_shards_in_path_order(
+    store: LocalArtifactStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot, opener = _litsearch_snapshot(
+        shard_paths=(
+            "qrels/test-00001-of-00002.parquet",
+            "queries/test-00001-of-00002.parquet",
+            "corpus/test-00001-of-00002.parquet",
+            "qrels/test-00000-of-00002.parquet",
+            "queries/test-00000-of-00002.parquet",
+            "corpus/test-00000-of-00002.parquet",
+        )
+    )
+    write_raw_dataset_artifact(store, "raw_litsearch_001", snapshot)
+    read_order: list[str] = []
+
+    def fake_read_parquet_records(
+        file: RawDatasetFile,
+        opener: object,
+    ) -> list[dict[str, object]]:
+        read_order.append(file.path)
+        rows_by_path: dict[str, list[dict[str, object]]] = {
+            "corpus/test-00000-of-00002.parquet": [
+                {"_id": "doc-0", "title": "Doc 0", "text": "First shard"}
+            ],
+            "corpus/test-00001-of-00002.parquet": [
+                {"_id": "doc-1", "title": "Doc 1", "text": "Second shard"}
+            ],
+            "queries/test-00000-of-00002.parquet": [{"_id": "q-0", "text": "first query"}],
+            "queries/test-00001-of-00002.parquet": [{"_id": "q-1", "text": "second query"}],
+            "qrels/test-00000-of-00002.parquet": [
+                {"query-id": "q-0", "corpus-id": "doc-0", "score": 1}
+            ],
+            "qrels/test-00001-of-00002.parquet": [
+                {"query-id": "q-1", "corpus-id": "doc-1", "score": 2}
+            ],
+        }
+        return rows_by_path[file.path]
+
+    monkeypatch.setattr(raw_normalize_module, "_read_parquet_records", fake_read_parquet_records)
+
+    normalize_raw_dataset_artifact(
+        store,
+        store,
+        RawToNormalizedConfig(
+            source_artifact_id="raw_litsearch_001",
+            output_artifact_id="normalized_litsearch_001",
+            dataset_name="LitSearchRetrieval",
+        ),
+        opener=opener,
+    )
+    loaded = read_normalized_dataset_artifact(store, "normalized_litsearch_001")
+
+    assert read_order == [
+        "corpus/test-00000-of-00002.parquet",
+        "corpus/test-00001-of-00002.parquet",
+        "queries/test-00000-of-00002.parquet",
+        "queries/test-00001-of-00002.parquet",
+        "qrels/test-00000-of-00002.parquet",
+        "qrels/test-00001-of-00002.parquet",
+    ]
+    assert [record.doc_id for record in loaded.corpus] == ["doc-0", "doc-1"]
+    assert [record.query_id for record in loaded.queries] == ["q-0", "q-1"]
+    assert [record.relevance for record in loaded.qrels] == [1.0, 2.0]
+
+
+@pytest.mark.parametrize(
+    ("missing_directory", "error_pattern"),
+    [
+        ("corpus", r"corpus/\*\.parquet"),
+        ("queries", r"queries/\*\.parquet"),
+        ("qrels", r"qrels/\*\.parquet"),
+    ],
+)
+def test_normalize_litsearch_parquet_rejects_missing_shard_group(
+    store: LocalArtifactStore,
+    missing_directory: str,
+    error_pattern: str,
+) -> None:
+    snapshot, opener = _litsearch_snapshot()
+    snapshot.files = [
+        file for file in snapshot.files if not file.path.startswith(f"{missing_directory}/")
+    ]
+    snapshot.content_fingerprint_sha256 = build_content_fingerprint_sha256(snapshot.files)
+    write_raw_dataset_artifact(store, "raw_litsearch_001", snapshot)
+
+    with pytest.raises(RawNormalizeError, match=error_pattern):
+        normalize_raw_dataset_artifact(
+            store,
+            store,
+            RawToNormalizedConfig(
+                source_artifact_id="raw_litsearch_001",
+                output_artifact_id="normalized_litsearch_001",
+                dataset_name="LitSearchRetrieval",
+            ),
+            opener=opener,
+        )
 
 
 def test_s3_raw_file_opener_reads_bytes_from_fake_client() -> None:
@@ -486,9 +583,13 @@ def test_normalize_litsearch_parquet_reports_progress(
         opener: object,
     ) -> list[dict[str, object]]:
         rows_by_path: dict[str, list[dict[str, object]]] = {
-            "corpus.parquet": [{"_id": "doc-1", "title": None, "text": "Doc"}],
-            "queries.parquet": [{"_id": "q-1", "text": "Query"}],
-            "qrels.parquet": [{"query-id": "q-1", "corpus-id": "doc-1", "score": 1}],
+            "corpus/test-00000-of-00001.parquet": [
+                {"_id": "doc-1", "title": None, "text": "Doc"}
+            ],
+            "queries/test-00000-of-00001.parquet": [{"_id": "q-1", "text": "Query"}],
+            "qrels/test-00000-of-00001.parquet": [
+                {"query-id": "q-1", "corpus-id": "doc-1", "score": 1}
+            ],
         }
         return rows_by_path[file.path]
 
@@ -508,9 +609,14 @@ def test_normalize_litsearch_parquet_reports_progress(
 
     assert [event.metadata["kind"] for event in events] == ["corpus", "queries", "qrels"]
     assert [event.metadata["path"] for event in events] == [
-        "corpus.parquet",
-        "queries.parquet",
-        "qrels.parquet",
+        "corpus/*.parquet",
+        "queries/*.parquet",
+        "qrels/*.parquet",
+    ]
+    assert [event.metadata["shard_paths"] for event in events] == [
+        ["corpus/test-00000-of-00001.parquet"],
+        ["queries/test-00000-of-00001.parquet"],
+        ["qrels/test-00000-of-00001.parquet"],
     ]
 
 
