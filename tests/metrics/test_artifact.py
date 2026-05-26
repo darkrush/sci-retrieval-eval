@@ -63,6 +63,7 @@ def test_write_metrics_run_artifact_writes_summary_and_shards(
             metadata={"source_retrieval_run_artifact_id": "retrieval-1"},
         ),
         queries_per_shard=1,
+        metadata={"queries_per_shard": 999},
         dependencies=[
             ArtifactDependency(artifact_type="normalized_dataset", artifact_id="normalized-1"),
             ArtifactDependency(artifact_type="retrieval_run", artifact_id="retrieval-1"),
@@ -77,6 +78,7 @@ def test_write_metrics_run_artifact_writes_summary_and_shards(
         f"{QUERY_METRICS_DIR}/part-00000.jsonl",
     )
     assert manifest.metadata["stage"] == "metrics_run"
+    assert manifest.metadata["queries_per_shard"] == 1
     assert manifest.metadata["query_metric_file_count"] == 2
     assert manifest.metadata["query_metric_record_count"] == 2
     assert [(dep.artifact_type, dep.artifact_id) for dep in manifest.dependencies] == [

@@ -25,6 +25,7 @@
 - 新增 `metrics_run` artifact IO：
   - `write_metrics_run_artifact(...)`
   - `read_metrics_run_artifact(...)`
+  - manifest metadata 写入 `queries_per_shard`，并作为系统字段防止用户 metadata 覆盖
 - 新增 metrics runner：
   - `MetricsRunConfig`
   - `run_metrics(...)`
@@ -207,4 +208,5 @@ pytest
 
 - 是否已提交：`yes`
 - commit subject：`Add metrics run artifact`
+- 返修 commit subject：`Record metrics shard size in manifest`
 - 验收者确认的最终 commit：由验收者用 `git log -1 --oneline` 确认

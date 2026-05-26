@@ -25,6 +25,7 @@ _SYSTEM_METADATA_FIELDS = {
     "main_score",
     "query_count",
     "evaluated_query_count",
+    "queries_per_shard",
     "query_metric_file_count",
     "query_metric_record_count",
 }
@@ -97,6 +98,7 @@ def write_metrics_run_artifact(
             "main_score": data.main_score,
             "query_count": len(data.query_metrics),
             "evaluated_query_count": len(data.query_metrics),
+            "queries_per_shard": queries_per_shard,
             "query_metric_file_count": len(files) - 1,
             "query_metric_record_count": len(data.query_metrics),
         }
