@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import eval_platform.datasets.raw_normalize as raw_normalize_module
 from eval_platform.artifacts import LocalArtifactStore
 from eval_platform.chunking.progress import ProgressEvent
 from eval_platform.datasets import (
@@ -73,69 +74,108 @@ def store(tmp_path: Path) -> LocalArtifactStore:
     return LocalArtifactStore(tmp_path)
 
 
-def _ifir_nfcorpus_snapshot() -> tuple[RawDatasetSnapshot, FakeRawFileOpener]:
+def _jsonl_tsv_snapshot(
+    *,
+    dataset_name: str = "IFIRNFCorpus",
+    slug: str = "ifir_nfcorpus",
+    has_instructions: bool = True,
+) -> tuple[RawDatasetSnapshot, FakeRawFileOpener]:
     uris_to_payloads = {
-        "s3://bucket/raw/ifir_nfcorpus/corpus.jsonl": (
+        f"s3://bucket/raw/{slug}/corpus.jsonl": (
             b'{"_id":"d1","title":"Title 1","text":"Doc 1"}\n'
             b'{"_id":"d2","title":"Title 2","text":"Doc 2"}\n'
         ),
-        "s3://bucket/raw/ifir_nfcorpus/queries.jsonl": (
+        f"s3://bucket/raw/{slug}/queries.jsonl": (
             b'{"_id":"q1","text":"Query 1"}\n'
             b'{"_id":"q2","text":"Query 2"}\n'
         ),
-        "s3://bucket/raw/ifir_nfcorpus/instructions.jsonl": (
-            b'{"query-id":"q1","instruction":"Instruction 1"}\n'
-            b'{"query-id":"q2","instruction":"Instruction 2"}\n'
-        ),
-        "s3://bucket/raw/ifir_nfcorpus/qrels/test.tsv": (
+        f"s3://bucket/raw/{slug}/qrels/test.tsv": (
             b"query-id\tcorpus-id\tscore\n"
             b"q1\td1\t1\n"
             b"q2\td2\t2\n"
         ),
     }
+    if has_instructions:
+        uris_to_payloads[f"s3://bucket/raw/{slug}/instructions.jsonl"] = (
+            b'{"query-id":"q1","instruction":"Instruction 1"}\n'
+            b'{"query-id":"q2","instruction":"Instruction 2"}\n'
+        )
     files = [
         RawDatasetFile(
             path="corpus.jsonl",
-            uri="s3://bucket/raw/ifir_nfcorpus/corpus.jsonl",
-            size_bytes=len(uris_to_payloads["s3://bucket/raw/ifir_nfcorpus/corpus.jsonl"]),
-            sha256=(
-                "49c683644ef3c9292f95b6a85ee1a29a920d73d034ca1d4f5671bc193d88055b"
-            ),
-        ),
-        RawDatasetFile(
-            path="instructions.jsonl",
-            uri="s3://bucket/raw/ifir_nfcorpus/instructions.jsonl",
-            size_bytes=len(
-                uris_to_payloads["s3://bucket/raw/ifir_nfcorpus/instructions.jsonl"]
-            ),
-            sha256=(
-                "1f713e3f812c5a316f50a7d5fd7319189b62efeff6d1b55be295644db7d4fd38"
-            ),
+            uri=f"s3://bucket/raw/{slug}/corpus.jsonl",
+            size_bytes=len(uris_to_payloads[f"s3://bucket/raw/{slug}/corpus.jsonl"]),
+            sha256="0" * 64,
         ),
         RawDatasetFile(
             path="qrels/test.tsv",
-            uri="s3://bucket/raw/ifir_nfcorpus/qrels/test.tsv",
-            size_bytes=len(uris_to_payloads["s3://bucket/raw/ifir_nfcorpus/qrels/test.tsv"]),
-            sha256=(
-                "63b97907358dba40bde0e166247993eb0dbdd8e5398af0f25b7afdbfb4e4f858"
-            ),
+            uri=f"s3://bucket/raw/{slug}/qrels/test.tsv",
+            size_bytes=len(uris_to_payloads[f"s3://bucket/raw/{slug}/qrels/test.tsv"]),
+            sha256="1" * 64,
         ),
         RawDatasetFile(
             path="queries.jsonl",
-            uri="s3://bucket/raw/ifir_nfcorpus/queries.jsonl",
-            size_bytes=len(uris_to_payloads["s3://bucket/raw/ifir_nfcorpus/queries.jsonl"]),
-            sha256=(
-                "7499a884c5cbac43ff8162c89edcf0b08555f2ecf4e7896cb8b4976808470ee1"
-            ),
+            uri=f"s3://bucket/raw/{slug}/queries.jsonl",
+            size_bytes=len(uris_to_payloads[f"s3://bucket/raw/{slug}/queries.jsonl"]),
+            sha256="2" * 64,
+        ),
+    ]
+    if has_instructions:
+        files.append(
+            RawDatasetFile(
+                path="instructions.jsonl",
+                uri=f"s3://bucket/raw/{slug}/instructions.jsonl",
+                size_bytes=len(uris_to_payloads[f"s3://bucket/raw/{slug}/instructions.jsonl"]),
+                sha256="3" * 64,
+            )
+        )
+    snapshot = RawDatasetSnapshot(
+        source_type="s3_prefix",
+        source_uri=f"s3://bucket/raw/{slug}",
+        dataset_name=dataset_name,
+        files=files,
+        content_fingerprint_sha256=build_content_fingerprint_sha256(files),
+        import_parameters={"split": "test"},
+    )
+    return snapshot, FakeRawFileOpener(uris_to_payloads)
+
+
+def _ifir_nfcorpus_snapshot() -> tuple[RawDatasetSnapshot, FakeRawFileOpener]:
+    return _jsonl_tsv_snapshot()
+
+
+def _litsearch_snapshot() -> tuple[RawDatasetSnapshot, FakeRawFileOpener]:
+    uris_to_payloads = {
+        "s3://bucket/raw/litsearch/corpus.parquet": b"fake-corpus",
+        "s3://bucket/raw/litsearch/queries.parquet": b"fake-queries",
+        "s3://bucket/raw/litsearch/qrels.parquet": b"fake-qrels",
+    }
+    files = [
+        RawDatasetFile(
+            path="corpus.parquet",
+            uri="s3://bucket/raw/litsearch/corpus.parquet",
+            size_bytes=len(uris_to_payloads["s3://bucket/raw/litsearch/corpus.parquet"]),
+            sha256="4" * 64,
+        ),
+        RawDatasetFile(
+            path="queries.parquet",
+            uri="s3://bucket/raw/litsearch/queries.parquet",
+            size_bytes=len(uris_to_payloads["s3://bucket/raw/litsearch/queries.parquet"]),
+            sha256="5" * 64,
+        ),
+        RawDatasetFile(
+            path="qrels.parquet",
+            uri="s3://bucket/raw/litsearch/qrels.parquet",
+            size_bytes=len(uris_to_payloads["s3://bucket/raw/litsearch/qrels.parquet"]),
+            sha256="6" * 64,
         ),
     ]
     snapshot = RawDatasetSnapshot(
         source_type="s3_prefix",
-        source_uri="s3://bucket/raw/ifir_nfcorpus",
-        dataset_name="IFIRNFCorpus",
+        source_uri="s3://bucket/raw/litsearch",
+        dataset_name="LitSearchRetrieval",
         files=files,
         content_fingerprint_sha256=build_content_fingerprint_sha256(files),
-        import_parameters={"split": "test"},
     )
     return snapshot, FakeRawFileOpener(uris_to_payloads)
 
@@ -171,11 +211,63 @@ def test_normalize_raw_dataset_artifact_ifir_nfcorpus(
     assert manifest.metadata["task_name"] == "IFIRNFCorpus"
     assert manifest.metadata["split"] == "test"
     assert manifest.metadata["normalizer_name"] == "ifir_nfcorpus_raw_jsonl_tsv_v1"
+    assert manifest.metadata["raw_format"] == "jsonl_tsv"
+    assert manifest.metadata["has_instructions"] is True
+    assert manifest.metadata["corpus_count"] == 2
+    assert manifest.metadata["query_count"] == 2
+    assert manifest.metadata["qrel_count"] == 2
     assert manifest.metadata["raw_dataset_artifact_id"] == "raw_ifir_nfcorpus_001"
     assert manifest.metadata["raw_dataset_fingerprint"] == snapshot.content_fingerprint_sha256
     assert manifest.metadata["raw_source_uri"] == "s3://bucket/raw/ifir_nfcorpus"
     assert manifest.metadata["normalized_schema_version"] == "1"
     assert manifest.metadata["note"] == "smoke"
+
+
+@pytest.mark.parametrize(
+    ("dataset_name", "slug", "normalizer_name", "has_instructions"),
+    [
+        ("IFIRNFCorpus", "ifir_nfcorpus", "ifir_nfcorpus_raw_jsonl_tsv_v1", True),
+        ("IFIRScifact", "ifir_scifact", "ifir_scifact_raw_jsonl_tsv_v1", True),
+        ("NFCorpus", "nfcorpus", "nfcorpus_raw_jsonl_tsv_v1", False),
+        ("SciFact", "scifact", "scifact_raw_jsonl_tsv_v1", False),
+    ],
+)
+def test_normalize_jsonl_tsv_raw_datasets(
+    store: LocalArtifactStore,
+    dataset_name: str,
+    slug: str,
+    normalizer_name: str,
+    has_instructions: bool,
+) -> None:
+    snapshot, opener = _jsonl_tsv_snapshot(
+        dataset_name=dataset_name,
+        slug=slug,
+        has_instructions=has_instructions,
+    )
+    write_raw_dataset_artifact(store, f"raw_{slug}_001", snapshot)
+
+    manifest = normalize_raw_dataset_artifact(
+        store,
+        store,
+        RawToNormalizedConfig(
+            source_artifact_id=f"raw_{slug}_001",
+            output_artifact_id=f"normalized_{slug}_001",
+            dataset_name=dataset_name,
+        ),
+        opener=opener,
+    )
+    loaded = read_normalized_dataset_artifact(store, f"normalized_{slug}_001")
+
+    assert len(loaded.corpus) == 2
+    assert len(loaded.queries) == 2
+    assert len(loaded.qrels) == 2
+    assert manifest.metadata["normalizer_name"] == normalizer_name
+    assert manifest.metadata["raw_format"] == "jsonl_tsv"
+    assert manifest.metadata["has_instructions"] is has_instructions
+    if has_instructions:
+        assert loaded.queries[0].metadata["instruction"] == "Instruction 1"
+    else:
+        assert loaded.queries[0].metadata == {}
 
 
 def test_normalize_raw_dataset_artifact_streams_corpus_jsonl(
@@ -206,7 +298,7 @@ def test_normalize_raw_dataset_artifact_rejects_unknown_normalizer(
     snapshot, opener = _ifir_nfcorpus_snapshot()
     write_raw_dataset_artifact(store, "raw_ifir_nfcorpus_001", snapshot)
 
-    with pytest.raises(RawNormalizeError, match="Unsupported raw normalizer"):
+    with pytest.raises(RawNormalizeError, match="Raw normalizer mismatch"):
         normalize_raw_dataset_artifact(
             store,
             store,
@@ -218,6 +310,93 @@ def test_normalize_raw_dataset_artifact_rejects_unknown_normalizer(
             ),
             opener=opener,
         )
+
+
+def test_normalize_raw_dataset_artifact_rejects_unsupported_dataset(
+    store: LocalArtifactStore,
+) -> None:
+    snapshot, opener = _ifir_nfcorpus_snapshot()
+    write_raw_dataset_artifact(store, "raw_unknown_001", snapshot)
+
+    with pytest.raises(RawNormalizeError, match="No raw normalizer"):
+        normalize_raw_dataset_artifact(
+            store,
+            store,
+            RawToNormalizedConfig(
+                source_artifact_id="raw_unknown_001",
+                output_artifact_id="normalized_unknown_001",
+                dataset_name="UnknownDataset",
+            ),
+            opener=opener,
+        )
+
+
+def test_normalize_raw_dataset_artifact_rejects_missing_required_file(
+    store: LocalArtifactStore,
+) -> None:
+    snapshot, opener = _jsonl_tsv_snapshot(
+        dataset_name="NFCorpus",
+        slug="nfcorpus",
+        has_instructions=False,
+    )
+    snapshot.files = [file for file in snapshot.files if file.path != "qrels/test.tsv"]
+    snapshot.content_fingerprint_sha256 = build_content_fingerprint_sha256(snapshot.files)
+    write_raw_dataset_artifact(store, "raw_nfcorpus_001", snapshot)
+
+    with pytest.raises(RawNormalizeError, match="Required raw file missing"):
+        normalize_raw_dataset_artifact(
+            store,
+            store,
+            RawToNormalizedConfig(
+                source_artifact_id="raw_nfcorpus_001",
+                output_artifact_id="normalized_nfcorpus_001",
+                dataset_name="NFCorpus",
+            ),
+            opener=opener,
+        )
+
+
+def test_normalize_litsearch_parquet_dataset(
+    store: LocalArtifactStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot, opener = _litsearch_snapshot()
+    write_raw_dataset_artifact(store, "raw_litsearch_001", snapshot)
+
+    def fake_read_parquet_records(
+        file: RawDatasetFile,
+        opener: object,
+    ) -> list[dict[str, object]]:
+        rows_by_path: dict[str, list[dict[str, object]]] = {
+            "corpus.parquet": [
+                {"_id": "doc-1", "title": "Doc 1", "text": "First document."}
+            ],
+            "queries.parquet": [{"_id": "q-1", "text": "first query"}],
+            "qrels.parquet": [{"query-id": "q-1", "corpus-id": "doc-1", "score": 1}],
+        }
+        return rows_by_path[file.path]
+
+    monkeypatch.setattr(raw_normalize_module, "_read_parquet_records", fake_read_parquet_records)
+
+    manifest = normalize_raw_dataset_artifact(
+        store,
+        store,
+        RawToNormalizedConfig(
+            source_artifact_id="raw_litsearch_001",
+            output_artifact_id="normalized_litsearch_001",
+            dataset_name="LitSearchRetrieval",
+        ),
+        opener=opener,
+    )
+    loaded = read_normalized_dataset_artifact(store, "normalized_litsearch_001")
+
+    assert loaded.corpus[0].doc_id == "doc-1"
+    assert loaded.queries[0].query_id == "q-1"
+    assert loaded.qrels[0].relevance == 1.0
+    assert manifest.metadata["normalizer_name"] == "litsearch_raw_parquet_v1"
+    assert manifest.metadata["raw_format"] == "parquet"
+    assert manifest.metadata["has_instructions"] is False
+    assert manifest.metadata["raw_source_uri"] == "s3://bucket/raw/litsearch"
 
 
 def test_s3_raw_file_opener_reads_bytes_from_fake_client() -> None:
@@ -264,6 +443,75 @@ def test_normalize_raw_dataset_artifact_reports_progress(
     ]
     assert events[-1].current == 4
     assert events[-1].total == 4
+
+
+def test_normalize_jsonl_tsv_without_instructions_reports_three_progress_events(
+    store: LocalArtifactStore,
+) -> None:
+    snapshot, opener = _jsonl_tsv_snapshot(
+        dataset_name="SciFact",
+        slug="scifact",
+        has_instructions=False,
+    )
+    write_raw_dataset_artifact(store, "raw_scifact_001", snapshot)
+    events: list[ProgressEvent] = []
+
+    normalize_raw_dataset_artifact(
+        store,
+        store,
+        RawToNormalizedConfig(
+            source_artifact_id="raw_scifact_001",
+            output_artifact_id="normalized_scifact_001",
+            dataset_name="SciFact",
+        ),
+        opener=opener,
+        progress_reporter=events.append,
+    )
+
+    assert [event.metadata["kind"] for event in events] == ["corpus", "queries", "qrels"]
+    assert events[-1].current == 3
+    assert events[-1].total == 3
+
+
+def test_normalize_litsearch_parquet_reports_progress(
+    store: LocalArtifactStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot, opener = _litsearch_snapshot()
+    write_raw_dataset_artifact(store, "raw_litsearch_001", snapshot)
+    events: list[ProgressEvent] = []
+
+    def fake_read_parquet_records(
+        file: RawDatasetFile,
+        opener: object,
+    ) -> list[dict[str, object]]:
+        rows_by_path: dict[str, list[dict[str, object]]] = {
+            "corpus.parquet": [{"_id": "doc-1", "title": None, "text": "Doc"}],
+            "queries.parquet": [{"_id": "q-1", "text": "Query"}],
+            "qrels.parquet": [{"query-id": "q-1", "corpus-id": "doc-1", "score": 1}],
+        }
+        return rows_by_path[file.path]
+
+    monkeypatch.setattr(raw_normalize_module, "_read_parquet_records", fake_read_parquet_records)
+
+    normalize_raw_dataset_artifact(
+        store,
+        store,
+        RawToNormalizedConfig(
+            source_artifact_id="raw_litsearch_001",
+            output_artifact_id="normalized_litsearch_001",
+            dataset_name="LitSearchRetrieval",
+        ),
+        opener=opener,
+        progress_reporter=events.append,
+    )
+
+    assert [event.metadata["kind"] for event in events] == ["corpus", "queries", "qrels"]
+    assert [event.metadata["path"] for event in events] == [
+        "corpus.parquet",
+        "queries.parquet",
+        "qrels.parquet",
+    ]
 
 
 def test_normalize_raw_dataset_artifact_reporter_failure_does_not_write_success(
