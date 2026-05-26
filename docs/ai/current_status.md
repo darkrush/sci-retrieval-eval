@@ -20,6 +20,8 @@ Shard-aware chunked_corpus / embeddings artifacts ready for merge review.
 - Platform config system
 - Shard-aware `chunked_corpus` artifact layout
 - Shard-aware `embeddings` artifact layout aligned to source chunk shards
+- Stream-oriented `iter_chunk_shards(...)` / `iter_embedding_shards(...)`
+- Stream-oriented embedding shard writer without full-corpus accumulation
 - Reusable progress reporter for raw-to-normalized / chunking / embedding
 
 ## In Progress
@@ -37,4 +39,4 @@ Shard-aware chunked_corpus / embeddings artifacts ready for merge review.
 
 ## Next Task
 
-Open and merge shard-aware artifact PR, then start stream-oriented Milvus ingest on top of shard zip join.
+Open and merge shard-aware artifact PR, then start Milvus ingest on top of shard zip join.

@@ -8,6 +8,7 @@ from eval_platform.embeddings.artifact import (
     EmbeddingShardDescriptor,
     iter_embedding_shards,
     read_embeddings_artifact,
+    write_embedding_shards_artifact,
     write_embeddings_artifact,
 )
 from eval_platform.embeddings.client import (
@@ -63,5 +64,6 @@ __all__ = [
     "read_embeddings_artifact",
     "run_embedding_consistency_check",
     "run_embedding",
+    "write_embedding_shards_artifact",
     "write_embeddings_artifact",
 ]

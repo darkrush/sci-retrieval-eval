@@ -30,6 +30,16 @@ def store(tmp_path: Path) -> LocalArtifactStore:
     return LocalArtifactStore(tmp_path)
 
 
+class CountingLocalArtifactStore(LocalArtifactStore):
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.get_file_calls: list[str] = []
+
+    def get_file(self, artifact_type: str, artifact_id: str, relative_path: str) -> bytes:
+        self.get_file_calls.append(relative_path)
+        return super().get_file(artifact_type, artifact_id, relative_path)
+
+
 def _sample_corpus() -> ChunkedCorpus:
     return ChunkedCorpus(
         chunks=[
@@ -134,11 +144,36 @@ def test_iter_chunk_shards_returns_manifest_order(store: LocalArtifactStore) -> 
     )
     write_chunked_corpus_artifact(store, "sharded_chunks", corpus, file_record_num=2)
 
-    shards = iter_chunk_shards(store, "sharded_chunks")
+    shards = list(iter_chunk_shards(store, "sharded_chunks"))
 
     assert [shard.shard_id for shard in shards] == ["part-00000", "part-00001"]
     assert [chunk.chunk_id for chunk in shards[0].chunks] == ["doc-1-0", "doc-2-0"]
     assert [chunk.chunk_id for chunk in shards[1].chunks] == ["doc-3-0"]
+
+
+def test_iter_chunk_shards_is_lazy(tmp_path: Path) -> None:
+    store = CountingLocalArtifactStore(tmp_path)
+    corpus = ChunkedCorpus(
+        chunks=[
+            ChunkRecord(chunk_id="doc-1-0", doc_id="doc-1", text="a", chunk_index=0),
+            ChunkRecord(chunk_id="doc-2-0", doc_id="doc-2", text="b", chunk_index=0),
+            ChunkRecord(chunk_id="doc-3-0", doc_id="doc-3", text="c", chunk_index=0),
+        ]
+    )
+    write_chunked_corpus_artifact(store, "sharded_chunks", corpus, file_record_num=2)
+
+    shard_iter = iter_chunk_shards(store, "sharded_chunks")
+
+    assert not isinstance(shard_iter, list)
+    assert store.get_file_calls == []
+
+    first_shard = next(shard_iter)
+    assert first_shard.shard_id == "part-00000"
+    assert store.get_file_calls == ["chunks/part-00000.jsonl"]
+
+    second_shard = next(shard_iter)
+    assert second_shard.shard_id == "part-00001"
+    assert store.get_file_calls == ["chunks/part-00000.jsonl", "chunks/part-00001.jsonl"]
 
 
 def test_shard_file_sha256_matches_file_payload(store: LocalArtifactStore) -> None:

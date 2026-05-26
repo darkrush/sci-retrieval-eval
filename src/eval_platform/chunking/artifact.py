@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any
 
@@ -179,8 +180,8 @@ def iter_chunk_shards(
     artifact_id: str,
     *,
     require_complete: bool = True,
-) -> list[ChunkShard]:
-    """Load chunk shards in manifest order."""
+) -> Iterator[ChunkShard]:
+    """Yield chunk shards in manifest order without preloading all shards."""
 
     if require_complete and not store.is_complete(CHUNKED_CORPUS_ARTIFACT_TYPE, artifact_id):
         raise ArtifactIncompleteError(
@@ -188,27 +189,23 @@ def iter_chunk_shards(
         )
 
     manifest = store.read_manifest(CHUNKED_CORPUS_ARTIFACT_TYPE, artifact_id)
-    shards: list[ChunkShard] = []
     for descriptor in _resolve_chunk_shard_descriptors(manifest):
         shard_text = store.get_file(
             CHUNKED_CORPUS_ARTIFACT_TYPE, artifact_id, descriptor.path
         ).decode("utf-8")
         loaded_chunks = load_chunks_jsonl(shard_text)
-        shards.append(
-            ChunkShard(
-                shard_id=descriptor.shard_id,
-                path=descriptor.path,
-                source_doc_count=descriptor.source_doc_count,
-                chunk_count=descriptor.chunk_count or len(loaded_chunks),
-                first_chunk_id=descriptor.first_chunk_id
-                or (loaded_chunks[0].chunk_id if loaded_chunks else None),
-                last_chunk_id=descriptor.last_chunk_id
-                or (loaded_chunks[-1].chunk_id if loaded_chunks else None),
-                sha256=descriptor.sha256 or _sha256_hexdigest(shard_text.encode("utf-8")),
-                chunks=loaded_chunks,
-            )
+        yield ChunkShard(
+            shard_id=descriptor.shard_id,
+            path=descriptor.path,
+            source_doc_count=descriptor.source_doc_count,
+            chunk_count=descriptor.chunk_count or len(loaded_chunks),
+            first_chunk_id=descriptor.first_chunk_id
+            or (loaded_chunks[0].chunk_id if loaded_chunks else None),
+            last_chunk_id=descriptor.last_chunk_id
+            or (loaded_chunks[-1].chunk_id if loaded_chunks else None),
+            sha256=descriptor.sha256 or _sha256_hexdigest(shard_text.encode("utf-8")),
+            chunks=loaded_chunks,
         )
-    return shards
 
 
 def write_chunked_corpus_artifact(

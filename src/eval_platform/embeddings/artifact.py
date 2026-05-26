@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
 from typing import Any
 
@@ -124,8 +125,8 @@ def iter_embedding_shards(
     artifact_id: str,
     *,
     require_complete: bool = True,
-) -> list[EmbeddingShard]:
-    """Load embedding shards in manifest order."""
+) -> Iterator[EmbeddingShard]:
+    """Yield embedding shards in manifest order without preloading all shards."""
 
     if require_complete and not store.is_complete(EMBEDDINGS_ARTIFACT_TYPE, artifact_id):
         raise ArtifactIncompleteError(
@@ -133,75 +134,53 @@ def iter_embedding_shards(
         )
 
     manifest = store.read_manifest(EMBEDDINGS_ARTIFACT_TYPE, artifact_id)
-    shards: list[EmbeddingShard] = []
     for descriptor in _resolve_embedding_shard_descriptors(manifest):
         shard_text = store.get_file(
             EMBEDDINGS_ARTIFACT_TYPE, artifact_id, descriptor.embedding_file
         ).decode("utf-8")
         embeddings = load_embeddings_jsonl(shard_text)
-        shards.append(
-            EmbeddingShard(
-                shard_id=descriptor.shard_id,
-                source_chunk_file=descriptor.source_chunk_file,
-                embedding_file=descriptor.embedding_file,
-                source_chunk_count=descriptor.source_chunk_count,
-                embedding_count=descriptor.embedding_count or len(embeddings),
-                first_chunk_id=descriptor.first_chunk_id
-                or (embeddings[0].chunk_id if embeddings else None),
-                last_chunk_id=descriptor.last_chunk_id
-                or (embeddings[-1].chunk_id if embeddings else None),
-                sha256=descriptor.sha256 or _sha256_hexdigest(shard_text.encode("utf-8")),
-                embeddings=embeddings,
-            )
+        yield EmbeddingShard(
+            shard_id=descriptor.shard_id,
+            source_chunk_file=descriptor.source_chunk_file,
+            embedding_file=descriptor.embedding_file,
+            source_chunk_count=descriptor.source_chunk_count,
+            embedding_count=descriptor.embedding_count or len(embeddings),
+            first_chunk_id=descriptor.first_chunk_id
+            or (embeddings[0].chunk_id if embeddings else None),
+            last_chunk_id=descriptor.last_chunk_id
+            or (embeddings[-1].chunk_id if embeddings else None),
+            sha256=descriptor.sha256 or _sha256_hexdigest(shard_text.encode("utf-8")),
+            embeddings=embeddings,
         )
-    return shards
 
 
-def write_embeddings_artifact(
+def write_embedding_shards_artifact(
     store: ArtifactStore,
     artifact_id: str,
-    embedded_corpus: EmbeddedCorpus,
+    shards: Iterable[EmbeddingShard],
     *,
     provenance: EmbeddingProvenance,
+    metadata: dict[str, Any] | None = None,
     source_artifact_id: str | None = None,
     source_artifact_type: str | None = "chunked_corpus",
     created_at: datetime | None = None,
     created_by: str | None = None,
     code_git_sha: str | None = None,
-    metadata: dict[str, Any] | None = None,
-    shards: list[EmbeddingShard] | None = None,
 ) -> ArtifactManifest:
-    """Write an embeddings artifact to the given store."""
+    """Write an embeddings artifact by streaming one shard at a time."""
 
-    _validate_embedding_dimensions(embedded_corpus, provenance)
-
-    if shards is None:
-        shards = [
-            EmbeddingShard(
-                shard_id="part-00000",
-                source_chunk_file="chunks.jsonl",
-                embedding_file=EMBEDDINGS_FILENAME,
-                source_chunk_count=len(embedded_corpus.embeddings),
-                embedding_count=len(embedded_corpus.embeddings),
-                first_chunk_id=embedded_corpus.embeddings[0].chunk_id
-                if embedded_corpus.embeddings
-                else None,
-                last_chunk_id=embedded_corpus.embeddings[-1].chunk_id
-                if embedded_corpus.embeddings
-                else None,
-                embeddings=list(embedded_corpus.embeddings),
-            )
-        ]
-
-    total_embedding_count = sum(shard.embedding_count for shard in shards)
-    if total_embedding_count != len(embedded_corpus.embeddings):
-        raise EmbeddingArtifactError("Shard embedding_count does not match total embedding_count")
-
+    total_embedding_count = 0
+    unique_chunk_ids: set[str] = set()
+    unique_doc_ids: set[str] = set()
     files: list[ArtifactFile] = []
     shard_metadata: list[dict[str, Any]] = []
-    sharded_output = any(shard.embedding_file != EMBEDDINGS_FILENAME for shard in shards)
+    sharded_output = False
 
     for shard in shards:
+        shard_corpus = EmbeddedCorpus(embeddings=shard.embeddings)
+        _validate_embedding_dimensions(shard_corpus, provenance)
+        if shard.embedding_count != len(shard.embeddings):
+            raise EmbeddingArtifactError("Embedding shard count does not match shard rows")
         shard_bytes = dump_embeddings_jsonl(shard.embeddings).encode("utf-8")
         shard_sha256 = _sha256_hexdigest(shard_bytes)
         shard.sha256 = shard_sha256
@@ -225,16 +204,19 @@ def write_embeddings_artifact(
                 sha256=shard_sha256,
             ).model_dump(mode="json")
         )
+        total_embedding_count += shard.embedding_count
+        unique_chunk_ids.update(record.chunk_id for record in shard.embeddings)
+        unique_doc_ids.update(record.doc_id for record in shard.embeddings)
+        sharded_output = sharded_output or shard.embedding_file != EMBEDDINGS_FILENAME
 
     manifest_metadata: dict[str, Any] = {}
-    manifest_metadata.update(embedded_corpus.metadata)
     if metadata:
         manifest_metadata.update(metadata)
     manifest_metadata.update(
         {
-            "embedding_count": len(embedded_corpus.embeddings),
-            "unique_chunk_count": len({record.chunk_id for record in embedded_corpus.embeddings}),
-            "unique_doc_count": len({record.doc_id for record in embedded_corpus.embeddings}),
+            "embedding_count": total_embedding_count,
+            "unique_chunk_count": len(unique_chunk_ids),
+            "unique_doc_count": len(unique_doc_ids),
             "embedding_dim": provenance.embedding_dim,
             "embedding_dtype": VECTOR_DTYPE,
             "vector_encoding": VECTOR_ENCODING,
@@ -277,6 +259,63 @@ def write_embeddings_artifact(
     store.write_manifest(EMBEDDINGS_ARTIFACT_TYPE, artifact_id, manifest)
     store.mark_success(EMBEDDINGS_ARTIFACT_TYPE, artifact_id)
     return manifest
+
+
+def write_embeddings_artifact(
+    store: ArtifactStore,
+    artifact_id: str,
+    embedded_corpus: EmbeddedCorpus,
+    *,
+    provenance: EmbeddingProvenance,
+    source_artifact_id: str | None = None,
+    source_artifact_type: str | None = "chunked_corpus",
+    created_at: datetime | None = None,
+    created_by: str | None = None,
+    code_git_sha: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    shards: list[EmbeddingShard] | None = None,
+) -> ArtifactManifest:
+    """Write an embeddings artifact to the given store."""
+
+    _validate_embedding_dimensions(embedded_corpus, provenance)
+
+    if shards is None:
+        shards = [
+            EmbeddingShard(
+                shard_id="part-00000",
+                source_chunk_file="chunks.jsonl",
+                embedding_file=EMBEDDINGS_FILENAME,
+                source_chunk_count=len(embedded_corpus.embeddings),
+                embedding_count=len(embedded_corpus.embeddings),
+                first_chunk_id=embedded_corpus.embeddings[0].chunk_id
+                if embedded_corpus.embeddings
+                else None,
+                last_chunk_id=embedded_corpus.embeddings[-1].chunk_id
+                if embedded_corpus.embeddings
+                else None,
+                embeddings=list(embedded_corpus.embeddings),
+            )
+        ]
+
+    total_embedding_count = sum(shard.embedding_count for shard in shards)
+    if total_embedding_count != len(embedded_corpus.embeddings):
+        raise EmbeddingArtifactError("Shard embedding_count does not match total embedding_count")
+
+    combined_metadata = dict(embedded_corpus.metadata)
+    if metadata:
+        combined_metadata.update(metadata)
+    return write_embedding_shards_artifact(
+        store,
+        artifact_id,
+        shards,
+        provenance=provenance,
+        metadata=combined_metadata,
+        source_artifact_id=source_artifact_id,
+        source_artifact_type=source_artifact_type,
+        created_at=created_at,
+        created_by=created_by,
+        code_git_sha=code_git_sha,
+    )
 
 
 def read_embeddings_artifact(

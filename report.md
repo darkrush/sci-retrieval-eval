@@ -15,6 +15,17 @@
 ## 2. 本次改动
 
 - 改了什么：
+  - 返工 `src/eval_platform/chunking/artifact.py`
+    - `iter_chunk_shards(...)` 从返回 `list[...]` 改成真正的惰性 iterator
+    - 每次只读取一个 chunk shard 文件
+  - 返工 `src/eval_platform/embeddings/artifact.py`
+    - `iter_embedding_shards(...)` 从返回 `list[...]` 改成真正的惰性 iterator
+    - 新增 `write_embedding_shards_artifact(...)`
+    - embedding shard 可以逐 shard 写入，不再要求先构造全量 `EmbeddedCorpus`
+  - 返工 `src/eval_platform/embeddings/runner.py`
+    - 移除对 `read_chunked_corpus_artifact(...)` 的全量依赖
+    - 移除累计全部 embedding records 后再写 artifact 的路径
+    - 改为逐 shard 读取 source chunk、逐 shard 生成 embedding、逐 shard 落盘
   - 新增 `src/eval_platform/chunking/progress.py`
     - 定义 `ProgressEvent`
     - 定义 `ProgressReporter`
@@ -59,6 +70,7 @@
   - 当前 `chunked_corpus` 和 `embeddings` 默认都是单文件。
   - 大 corpus 下，后续 Milvus ingest 如果需要按 `chunk_id` 对齐 chunk 和 embedding，会被迫全量加载两份大文件，内存压力很大。
   - 用户要求 chunk shard 按 source doc 数切分，并让 embedding shard 与之逐 shard 对齐，为后续流式 zip join 做准备。
+  - 上一版已经完成 shard 文件布局，但 `iter_*_shards(...)` 和 `run_embedding(...)` 仍然会全量加载；这轮返工的目标是把对下游关键的读取与写入路径改成真正流式。
 - 没改什么：
   - 没有实现 Milvus ingest
   - 没有实现 ES ingest
@@ -164,19 +176,33 @@ embeddings/<artifact_id>/embeddings/part-00001.jsonl
    - `iter_chunk_shards(...)`
    - `iter_embedding_shards(...)`
 
+需要特别说明：
+
+1. `read_chunked_corpus_artifact(...)`
+2. `read_embeddings_artifact(...)`
+
+为了兼容旧调用方，仍然是**全量 in-memory 读取 API**。
+
+真正给后续 ingest 用的流式接口是：
+
+1. `iter_chunk_shards(...)`
+2. `iter_embedding_shards(...)`
+
 ### 4.3 embedding 如何和 chunk shard 对齐
 
-`run_embedding(...)` 现在不再只读整份 `ChunkedCorpus` 后一次性写单文件。
+`run_embedding(...)` 在返工后不再走“先全量读 source，再全量攒 embedding”的路径。
 
 新的对齐策略：
 
-1. 先按 `iter_chunk_shards(...)` 读取 source chunk shard。
+1. 先按 `iter_chunk_shards(...)` 惰性读取 source chunk shard。
 2. 每个 chunk shard 内按 batch 调 `client.embed_texts(...)`。
 3. 当前 shard 生成的 embedding 只写入对应 embedding shard。
 4. 同一 shard 内逐行保持：
    - `chunk_id` 一致
    - `doc_id` 一致
    - 顺序一致
+5. 每个 embedding shard 在当前 shard 完成后立即写入 store。
+6. 最后只基于计数和 shard descriptor 汇总 manifest，不再保留全量向量列表。
 
 这保证后续 ingest 可以逐 shard 做流式 zip join。
 
@@ -283,7 +309,22 @@ ProgressReporter = Callable[[ProgressEvent], None]
 2. CLI 只需把 `ProgressEvent` 映射成日志 / 进度条
 3. artifact 内容和 manifest 不需要关心 CLI 展示逻辑
 
-### 4.7 reporter 异常时的行为
+### 4.7 本轮返工后哪些 API 是流式
+
+真正流式：
+
+1. `iter_chunk_shards(...)`
+2. `iter_embedding_shards(...)`
+3. `run_embedding(...)` 的 source chunk 消费路径
+4. `write_embedding_shards_artifact(...)`
+
+仍然是兼容性全量 API：
+
+1. `read_chunked_corpus_artifact(...)`
+2. `read_embeddings_artifact(...)`
+3. `write_embeddings_artifact(...)`
+
+### 4.8 reporter 异常时的行为
 
 progress callback 默认不传时行为不变。
 
@@ -318,13 +359,13 @@ pytest
 - `pytest tests/datasets/test_raw_normalize.py`：
   - 通过，`7 passed`
 - `pytest tests/chunking tests/embeddings`：
-  - 通过，`219 passed`
+  - 通过，`224 passed`
 - `ruff check .`：
   - 通过
 - `mypy .`：
   - 通过，`Success: no issues found in 98 source files`
 - `pytest`：
-  - 通过，`371 passed`
+  - 通过，`376 passed`
 
 ## 6. 风险与未决项
 
@@ -345,5 +386,5 @@ pytest
 ## 8. 提交信息
 
 - 是否已提交：`yes`
-- commit subject：`Add shard-aware corpus artifacts`
+- commit subject：`Stream shard readers and embedding writer`
 - 验收者确认的最终 commit：
