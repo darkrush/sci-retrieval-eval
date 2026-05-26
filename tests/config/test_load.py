@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from eval_platform.config import PlatformConfig, deep_merge_config, load_platform_config
 
@@ -92,3 +93,20 @@ def test_none_explicitly_overrides_value() -> None:
     merged = deep_merge_config({"s3": {"prefix": "abc"}}, {"s3": {"prefix": None}})
 
     assert merged["s3"]["prefix"] is None
+
+
+def test_unknown_yaml_field_raises_validation_error(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "embedding:\n"
+        "  batch_szie: 8\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError):
+        load_platform_config(config_path)
+
+
+def test_unknown_cli_override_field_raises_validation_error() -> None:
+    with pytest.raises(ValidationError):
+        load_platform_config(cli_overrides={"embedding": {"batch_szie": 8}})

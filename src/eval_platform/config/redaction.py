@@ -19,7 +19,7 @@ def _redact_value(value: Any) -> Any:
         redacted: dict[str, Any] = {}
         for key, item in value.items():
             if _is_sensitive_key(key):
-                redacted[key] = "***" if item is not None else None
+                redacted[key] = "***"
             else:
                 redacted[key] = _redact_value(item)
         return redacted

@@ -194,12 +194,12 @@ pytest
 - `mypy .`：
   - 通过，`Success: no issues found in 91 source files`
 - `pytest`：
-  - 通过，`352 passed`
+  - 通过，`351 passed`
 
 ### 5.3 提交信息
 
-- 是否已提交：`no`
-- commit subject：
+- 是否已提交：`yes`
+- commit subject：`Add platform config system`
 - 验收者确认的最终 commit：
 
 ## 6. 风险与未决项

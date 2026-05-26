@@ -4,15 +4,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class EndpointConfig(BaseModel):
+class StrictConfigModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class EndpointConfig(StrictConfigModel):
     url: str | None = None
     api_key: str | None = None
 
 
-class S3Config(BaseModel):
+class S3Config(StrictConfigModel):
     endpoint: str | None = None
     bucket: str | None = None
     access_key_id: str | None = None
@@ -20,13 +24,13 @@ class S3Config(BaseModel):
     prefix: str | None = None
 
 
-class ElasticsearchConfig(BaseModel):
+class ElasticsearchConfig(StrictConfigModel):
     url: str | None = None
     username: str | None = None
     password: str | None = None
 
 
-class MilvusConfig(BaseModel):
+class MilvusConfig(StrictConfigModel):
     address: str | None = None
     username: str | None = None
     password: str | None = None
@@ -34,7 +38,7 @@ class MilvusConfig(BaseModel):
     db_name: str | None = None
 
 
-class EmbeddingConfig(BaseModel):
+class EmbeddingConfig(StrictConfigModel):
     model: str | None = None
     dim: int | None = None
     batch_size: int | None = None
@@ -45,14 +49,14 @@ class EmbeddingConfig(BaseModel):
     endpoints: list[EndpointConfig] = Field(default_factory=list)
 
 
-class RerankConfig(BaseModel):
+class RerankConfig(StrictConfigModel):
     model: str | None = None
     timeout_sec: float | None = None
     max_retries: int | None = None
     endpoints: list[EndpointConfig] = Field(default_factory=list)
 
 
-class RewriteConfig(BaseModel):
+class RewriteConfig(StrictConfigModel):
     enabled: bool | None = None
     base_url: str | None = None
     api_key: str | None = None
@@ -62,7 +66,7 @@ class RewriteConfig(BaseModel):
     max_tokens: int | None = None
 
 
-class SearchRuntimeConfig(BaseModel):
+class SearchRuntimeConfig(StrictConfigModel):
     go_api_url: str | None = None
     request_timeout_sec: float | None = None
     rewrite: RewriteConfig | None = None
@@ -71,14 +75,14 @@ class SearchRuntimeConfig(BaseModel):
     milvus_collection: str | None = None
 
 
-class RawSourceConfig(BaseModel):
+class RawSourceConfig(StrictConfigModel):
     uri: str | None = None
     source_type: str | None = None
     dataset_revision: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class ChunkingConfig(BaseModel):
+class ChunkingConfig(StrictConfigModel):
     repo_path: str | None = None
     repo_remote: str | None = None
     commit_sha: str | None = None
@@ -86,7 +90,7 @@ class ChunkingConfig(BaseModel):
     chunk_params: dict[str, Any] = Field(default_factory=dict)
 
 
-class PlatformConfig(BaseModel):
+class PlatformConfig(StrictConfigModel):
     s3: S3Config = Field(default_factory=S3Config)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
     rerank: RerankConfig | None = None
