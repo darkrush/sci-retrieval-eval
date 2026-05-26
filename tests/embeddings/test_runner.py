@@ -13,6 +13,7 @@ from eval_platform.embeddings import (
     EMBEDDINGS_ARTIFACT_TYPE,
     EMBEDDINGS_FILENAME,
     EmbeddedCorpus,
+    EmbeddingConsistencyCheckResult,
     EmbeddingRunConfig,
     EmbeddingRunError,
     FakeEmbeddingClient,
@@ -160,7 +161,18 @@ def test_run_embedding_records_provenance_metadata(
     source_store: LocalArtifactStore,
     output_store: LocalArtifactStore,
 ) -> None:
-    manifest = run_embedding(source_store, output_store, _config(), FakeEmbeddingClient(3))
+    config = _config()
+    config.endpoint_id = "endpoint-a"
+    config.endpoint_ids = ["endpoint-a", "endpoint-b"]
+    config.batch_size = 8
+    config.timeout_seconds = 60.0
+    config.consistency_check = EmbeddingConsistencyCheckResult(
+        input_text="probe text",
+        endpoint_ids=["endpoint-a", "endpoint-b"],
+        passed=True,
+        max_abs_diff=0.0,
+    )
+    manifest = run_embedding(source_store, output_store, config, FakeEmbeddingClient(3))
 
     provenance = manifest.metadata["provenance"]
     assert provenance["model_name"] == "fake-embedding-model"
@@ -168,6 +180,11 @@ def test_run_embedding_records_provenance_metadata(
     assert provenance["api_version"] == "v1"
     assert provenance["embedding_dim"] == 3
     assert provenance["normalized"] is True
+    assert provenance["endpoint_id"] == "endpoint-a"
+    assert provenance["endpoint_ids"] == ["endpoint-a", "endpoint-b"]
+    assert provenance["consistency_check"]["passed"] is True
+    assert provenance["runtime_parameters"]["batch_size"] == 8
+    assert provenance["runtime_parameters"]["timeout_seconds"] == 60.0
     assert manifest.metadata["embedding_count"] == 2
     assert manifest.metadata["unique_chunk_count"] == 2
     assert manifest.metadata["unique_doc_count"] == 2
