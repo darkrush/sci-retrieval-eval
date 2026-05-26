@@ -27,6 +27,7 @@ from eval_platform.datasets.raw_normalize import (
     RawFileOpener,
     RawNormalizeError,
     RawToNormalizedConfig,
+    S3RawFileOpener,
     normalize_raw_dataset_artifact,
 )
 from eval_platform.datasets.schema import (
@@ -53,6 +54,7 @@ __all__ = [
     "RawDatasetSnapshot",
     "RawNormalizeError",
     "RawToNormalizedConfig",
+    "S3RawFileOpener",
     "build_content_fingerprint_sha256",
     "dump_jsonl",
     "import_raw_dataset_from_local_dir",

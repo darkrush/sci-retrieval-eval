@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import io
 import json
 from pathlib import PurePosixPath
 from typing import Any, BinaryIO, Protocol
@@ -31,6 +32,45 @@ def _non_empty_string(value: str, field_name: str) -> str:
 
 class RawNormalizeError(Exception):
     """Raised when a raw snapshot cannot be normalized."""
+
+
+class S3RawFileOpener:
+    """Open raw files referenced by `s3://bucket/key` URIs."""
+
+    def __init__(self, client: Any | None = None) -> None:
+        self._client = client if client is not None else self._create_default_client()
+
+    @staticmethod
+    def _create_default_client() -> Any:
+        try:
+            import boto3
+        except ImportError as exc:
+            raise ImportError(
+                "boto3 is required for S3RawFileOpener. "
+                "Install with: pip install 'sci-retrieval-eval[s3]'"
+            ) from exc
+        return boto3.client("s3")
+
+    @staticmethod
+    def _parse_s3_uri(uri: str) -> tuple[str, str]:
+        if not uri.startswith("s3://"):
+            raise RawNormalizeError(f"Unsupported raw file URI: {uri!r}")
+
+        without_scheme = uri[len("s3://") :]
+        bucket, separator, key = without_scheme.partition("/")
+        if not bucket or not separator or not key:
+            raise RawNormalizeError(f"Invalid S3 raw file URI: {uri!r}")
+        return bucket, key
+
+    def open(self, uri: str) -> BinaryIO:
+        bucket, key = self._parse_s3_uri(uri)
+        response = self._client.get_object(Bucket=bucket, Key=key)
+        body = response["Body"]
+        if hasattr(body, "read"):
+            return body
+        if isinstance(body, bytes):
+            return io.BytesIO(body)
+        raise RawNormalizeError("S3 get_object response body is not readable")
 
 
 class RawFileOpener(Protocol):

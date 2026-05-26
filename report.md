@@ -18,6 +18,7 @@
   - 新增 `src/eval_platform/datasets/raw_normalize.py`
     - 定义 `RawToNormalizedConfig`
     - 定义 `RawFileOpener` protocol
+    - 实现 `S3RawFileOpener`
     - 实现 `normalize_raw_dataset_artifact(...)`
     - 第一版支持 `IFIRNFCorpus`
   - 扩展 `src/eval_platform/datasets/normalized.py`
@@ -78,6 +79,10 @@ normalize_raw_dataset_artifact(
 - 输出：`normalized_dataset` artifact
 - `source_store` 与 `output_store` 可以不同
 - `opener` 负责按 `RawDatasetFile.uri` 打开原始文件流
+- 当前内置生产 opener：
+  - `S3RawFileOpener`
+  - 默认用 boto3 client 打开 `s3://bucket/key`
+  - 测试使用 fake S3 client，不访问真实 S3
 
 ### 4.2 IFIRNFCorpus 字段映射
 
@@ -175,16 +180,16 @@ pytest
 
 ### 5.3 提交信息
 
-- 是否已提交：`no`
-- commit subject：
+- 是否已提交：`yes`
+- commit subject：`Add raw to normalized dataset adapter`
 - 验收者确认的最终 commit：
 
 ## 6. 风险与未决项
 
 - 已知风险：
   - 第一版只覆盖 `IFIRNFCorpus`，其余 raw asset 仍需补 dataset-specific raw normalizer
+  - 当前 writer 仍要求先构造内存中的 `NormalizedDataset`；在支持 `ifir_scifact` 这类更大 corpus 前，还需要 streaming normalized writer 或分批 writer
 - 未覆盖场景：
-  - 还没有生产用的真实 S3 opener 实现
   - 还没有批量 runner / orchestration
 - 需要验收者重点检查的点：
   - `raw_source_uri` 的定义是否足够稳定

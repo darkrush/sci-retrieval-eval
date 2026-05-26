@@ -15,6 +15,7 @@ from eval_platform.datasets import (
     RawDatasetSnapshot,
     RawNormalizeError,
     RawToNormalizedConfig,
+    S3RawFileOpener,
     build_content_fingerprint_sha256,
     normalize_raw_dataset_artifact,
     read_normalized_dataset_artifact,
@@ -53,6 +54,17 @@ class FakeRawFileOpener:
         stream = RecordingBinaryStream(self.payloads[uri])
         self.streams[uri] = stream
         return stream
+
+
+class FakeS3Client:
+    def __init__(self) -> None:
+        self.objects: dict[tuple[str, str], bytes] = {}
+
+    def put_object(self, *, Bucket: str, Key: str, Body: bytes) -> None:
+        self.objects[(Bucket, Key)] = Body
+
+    def get_object(self, *, Bucket: str, Key: str) -> dict[str, io.BytesIO]:
+        return {"Body": io.BytesIO(self.objects[(Bucket, Key)])}
 
 
 @pytest.fixture
@@ -205,3 +217,20 @@ def test_normalize_raw_dataset_artifact_rejects_unknown_normalizer(
             ),
             opener=opener,
         )
+
+
+def test_s3_raw_file_opener_reads_bytes_from_fake_client() -> None:
+    client = FakeS3Client()
+    client.put_object(Bucket="raw-bucket", Key="path/data.jsonl", Body=b'{"_id":"1"}\n')
+
+    opener = S3RawFileOpener(client=client)
+
+    with opener.open("s3://raw-bucket/path/data.jsonl") as stream:
+        assert stream.read() == b'{"_id":"1"}\n'
+
+
+def test_s3_raw_file_opener_rejects_invalid_uri() -> None:
+    opener = S3RawFileOpener(client=FakeS3Client())
+
+    with pytest.raises(RawNormalizeError, match="Unsupported raw file URI"):
+        opener.open("file:///tmp/not-s3.jsonl")
