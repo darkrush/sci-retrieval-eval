@@ -168,7 +168,11 @@ def run_retrieval(
                     query_id=query.query_id,
                     query_text=query.text,
                     hits=[],
-                    trace=None,
+                    trace=(
+                        _build_error_trace(query.text, exc)
+                        if config.trace_mode == "replay"
+                        else None
+                    ),
                     error=str(exc),
                 )
             )
@@ -305,6 +309,18 @@ def _retrieve_one_query(
         trace=trace if config.trace_mode == "replay" else None,
         error=None,
     )
+
+
+def _build_error_trace(query_text: str, exc: Exception) -> dict[str, Any]:
+    return {
+        "rewrite_queries": [query_text.strip()],
+        "per_query": [],
+        "rerank_input": [],
+        "rerank_hits": [],
+        "final_hits": [],
+        "error": str(exc),
+        "error_stage": "unknown",
+    }
 
 
 def _resolve_query_paths(

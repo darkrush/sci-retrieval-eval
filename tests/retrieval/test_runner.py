@@ -356,8 +356,46 @@ def test_run_retrieval_records_query_error_and_continues(store: LocalArtifactSto
     assert len(records) == 2
     assert records[0].error is None
     assert records[1].error == "boom"
+    assert records[1].trace is not None
+    assert records[1].trace["error"] == "boom"
+    assert records[1].trace["error_stage"] == "unknown"
+    assert records[1].trace["rewrite_queries"] == ["error query"]
+    assert records[1].trace["final_hits"] == []
     assert manifest.metadata["failed_query_count"] == 1
     assert store.is_complete(RETRIEVAL_RUN_ARTIFACT_TYPE, "retrieval-1") is True
+
+
+def test_run_retrieval_run_with_failed_query_can_be_replayed(
+    store: LocalArtifactStore,
+) -> None:
+    es = FakeElasticsearchClient()
+    run_retrieval(
+        store,
+        store,
+        _config(
+            retrieval_mode="es",
+            milvus_collection_artifact_id=None,
+            query_limit=None,
+        ),
+        es_client=es,
+    )
+
+    replay_manifest = run_retrieval(
+        store,
+        store,
+        _config(
+            output_artifact_id="replayed-run",
+            execution_mode="replay",
+            replay_source_retrieval_run_artifact_id="retrieval-1",
+        ),
+    )
+    source_records = read_retrieval_run_artifact(store, "retrieval-1")
+    replay_records = read_retrieval_run_artifact(store, "replayed-run")
+
+    assert [record.model_dump(mode="json") for record in replay_records] == [
+        record.model_dump(mode="json") for record in source_records
+    ]
+    assert replay_manifest.metadata["failed_query_count"] == 1
 
 
 def test_run_retrieval_requires_missing_clients_before_writing(

@@ -40,6 +40,7 @@
   - `trace_mode="none"` 显式关闭 trace
   - `execution_mode="replay"` 从既有 `retrieval_run` artifact 复制结果
   - replay 模式不会调用 rewrite / embedding / ES / Milvus / rerank client
+  - query 级异常在 `trace_mode="replay"` 下也写入最小错误 trace，保证带失败 query 的 run 可 replay
 - 更新：
   - `src/eval_platform/retrieval/__init__.py`
   - `docs/decisions/0019-retrieval-run-artifact.md`
@@ -178,9 +179,10 @@ sort = score desc, chunk_id asc
 
 ### 5.5 Trace / Replay
 
-- 默认 `trace_mode="replay"`，每条成功 query result 写入 trace。
+- 默认 `trace_mode="replay"`，每条 query result 写入 trace；失败 query 写入最小错误 trace。
 - `trace_mode="none"` 时，query result 的 `trace` 为 `null`，manifest 记录 `trace_mode=none`。
 - replay trace 包含 `rewrite_queries`、`per_query`、每个 query path 的 ES / Milvus / fused hits、`rerank_input`、`rerank_hits` 和 `final_hits`。
+- 失败 query 的最小错误 trace 包含 `rewrite_queries`、空 `per_query` / `rerank_input` / `rerank_hits` / `final_hits`、`error` 和 `error_stage`。
 - `execution_mode="replay"` 必须提供 `replay_source_retrieval_run_artifact_id`。
 - replay 会读取源 `retrieval_run` artifact 并把 `query_id` / `query_text` / `hits` / `trace` 原样写入新 artifact。
 - 如果源 run 任何 record 缺少 trace，replay 会失败且不会写出完整 output artifact。
@@ -196,6 +198,7 @@ sort = score desc, chunk_id asc
 - fake-client unit tests
 - query-level failure 记录
 - 默认 replay trace
+- query-level failure 最小错误 trace
 - `trace_mode="none"`
 - `execution_mode="replay"`
 
@@ -234,19 +237,19 @@ pytest
 ### 8.2 输出摘要
 
 - `pytest tests/retrieval`
-  - 返修后通过，`18 passed`
+  - 返修后通过，`19 passed`
 - `ruff check .`
   - 通过，`All checks passed!`
 - `mypy .`
   - 通过，`Success: no issues found in 117 source files`
 - `pytest`
-  - 通过，`487 passed`
+  - 通过，`488 passed`
 
 ## 9. 风险与未决项
 
 - 本轮没有真实 ES / Milvus / rewrite / rerank adapter，因此真实联调仍需后续 PR。
 - `trace` 可能较大；默认写入 replay trace，如需节省空间必须显式设置 `trace_mode="none"`。
-- query-level error 当前写入 result artifact 并继续 run；后续 metrics 需要明确如何处理失败 query。
+- query-level error 当前写入 result artifact 并继续 run，同时写入最小错误 trace；后续 metrics 需要明确如何处理失败 query。
 - 真实 adapter 接入时需要检查 ES BM25 字段权重 `title^1.5` / `text` 和 ES enrich 返回顺序。
 
 ## 10. 交付结论
@@ -258,5 +261,5 @@ pytest
 ## 11. 提交信息
 
 - 是否已提交：`yes`
-- commit subject：`Tighten retrieval run replay trace`
+- commit subject：`Record retrieval error replay traces`
 - 验收者确认的最终 commit：由验收者用 `git log -1 --oneline` 确认
