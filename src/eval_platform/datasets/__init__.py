@@ -11,7 +11,6 @@ from eval_platform.datasets.normalized import (
 )
 from eval_platform.datasets.raw import (
     RAW_DATASET_ARTIFACT_TYPE,
-    RAW_DATASET_FILES_DIR,
     RawDatasetArtifactError,
     RawDatasetFile,
     RawDatasetSnapshot,
@@ -37,7 +36,6 @@ __all__ = [
     "QRELS_FILENAME",
     "QUERIES_FILENAME",
     "RAW_DATASET_ARTIFACT_TYPE",
-    "RAW_DATASET_FILES_DIR",
     "CorpusRecord",
     "NormalizedDataset",
     "QrelRecord",

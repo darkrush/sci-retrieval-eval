@@ -20,7 +20,9 @@
 其约束如下：
 
 1. artifact 类型固定为 `raw_dataset`。
-2. 原始文件内容按稳定相对路径写入 artifact 内的 `files/` 目录。
+2. 第一版采用 snapshot-only 设计：
+   - artifact 只写 `_MANIFEST.json` 和 `_SUCCESS`
+   - 默认不复制 raw 文件内容进入 artifact store
 3. manifest metadata 至少记录：
    - `stage`
    - `source_type`
@@ -32,8 +34,18 @@
    - `files`
    - `content_fingerprint_sha256`
    - `import_parameters`
-4. 单文件 `sha256` 与 dataset 级 `content_fingerprint_sha256` 都按稳定排序生成。
-5. hash 计算必须流式读取文件内容，不要求为了满足当前 `ArtifactStore` 接口而改造整个存储抽象。
+4. `files` 中每条记录至少包含：
+   - `path`
+   - `uri`
+   - `size_bytes`
+   - `sha256`
+5. 单文件 `sha256` 与 dataset 级 `content_fingerprint_sha256` 都按稳定排序生成。
+6. `content_fingerprint_sha256` 基于：
+   - `path`
+   - `uri`
+   - `size_bytes`
+   - `sha256`
+7. hash 计算必须流式读取文件内容，不要求为了满足当前 `ArtifactStore` 接口而改造整个存储抽象。
 6. 第一阶段支持两种导入方式：
    - 从本地目录导入
    - 从既有 S3 prefix 导入
@@ -42,5 +54,5 @@
 
 1. 后续 `normalized_dataset` 应依赖 `raw_dataset` 作为上游输入身份。
 2. raw 层与 normalized 层职责分离后，下载/拉取问题与标准化问题可以分开定位。
-3. 当前 `ArtifactStore.put_file(...)` 仍以 `bytes` 为输入，因此导入时虽然 hash 是流式计算，写入前仍会在进程内暂存单文件字节内容。
-4. 若后续 raw 文件规模继续增大，可以再单独演进 `ArtifactStore` 的 streaming upload 能力，而不影响本次 schema 与 manifest 约定。
+3. 第一版不会生成 raw 文件副本，因此可以直接把不可变 S3 raw prefix 作为可信起点。
+4. 若后续需要 materialize raw 文件副本，应单独演进 `ArtifactStore` 的 streaming upload 能力，而不是回到 `dict[str, bytes]` 聚合方案。

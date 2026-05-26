@@ -17,14 +17,18 @@
 - 改了什么：
   - 新增 `src/eval_platform/datasets/raw.py`，定义 `raw_dataset` artifact 的 schema、manifest 字段和读写逻辑。
   - 新增 `src/eval_platform/datasets/raw_import.py`，支持：
-    - 从本地目录导入 raw 文件快照
-    - 从既有 S3 prefix 导入 raw 文件快照
+    - 从本地目录导入 raw 文件元数据快照
+    - 从既有 S3 prefix 导入 raw 文件元数据快照
   - 更新 `src/eval_platform/datasets/__init__.py`，导出 `raw_dataset` 相关公共接口。
-  - 新增 `tests/datasets/test_raw_dataset.py`，覆盖 local store、本地目录导入、fake S3 source 导入和 fake S3 output 场景。
+  - 根据验收反馈，把第一版实现收紧为 snapshot-only：
+    - 不再复制 raw 文件内容到 artifact store
+    - artifact 内只写 `_MANIFEST.json` 和 `_SUCCESS`
+  - 新增 `tests/datasets/test_raw_dataset.py`，覆盖 snapshot-only、本地目录导入、fake S3 source 导入、fake S3 output 和流式 body 场景。
   - 新增 ADR `docs/decisions/0011-raw-dataset-artifact.md`。
 - 为什么这样改：
   - 当前 `normalized_dataset` 直接从内存对象开始，缺少“原始输入先落盘”的可审计层。
   - `raw_dataset` artifact 先固定原始文件身份，后续才能稳定建立 `raw_dataset -> normalized_dataset` 依赖。
+  - 验收反馈指出之前的 `dict[str, bytes]` 聚合方案在大文件场景下仍会把 raw 内容积到内存里，不满足本任务目标，所以改成 manifest snapshot 设计。
 - 没改什么：
   - 没有实现 `raw_dataset -> normalized_dataset` 自动转换。
   - 没有实现 chunk / embedding / ES / Milvus / retrieval / metrics。
@@ -53,7 +57,8 @@
   - `raw_dataset` 放在 `datasets/` 下，而不是 `artifacts/` 下。
   - 理由是这层仍属于“数据输入身份”，和 `normalized_dataset` 属于同一数据域。
 - 决策 2：
-  - artifact 内部原始文件统一写到 `files/` 子目录，避免与 `_MANIFEST.json`、`_SUCCESS` 混用命名空间。
+  - 第一版 `raw_dataset` 采用 snapshot-only 设计，不复制 raw 文件内容。
+  - 理由是已知 raw source（尤其 `ifir_scifact/corpus.jsonl` 约 745MB）不适合通过 `dict[str, bytes]` 聚合后再写入。
 - 决策 3：
   - manifest metadata 中的系统字段统一由写入逻辑最后覆盖，避免用户 metadata 覆盖 `stage / file_count / content_fingerprint_sha256` 等关键信息。
 
@@ -72,15 +77,25 @@
     - `content_fingerprint_sha256`
     - `import_parameters`
 - 行为 2：
+  - `RawDatasetFile` 记录：
+    - `path`
+    - `uri`
+    - `size_bytes`
+    - `sha256`
+- 行为 3：
   - 单文件 `sha256` 通过流式读取计算：
     - 按固定 chunk 大小逐块 `read(...)`
     - 每块增量更新 `hashlib.sha256()`
     - 不在 hash 阶段一次性整文件读入内存
-- 行为 3：
-  - dataset 级 `content_fingerprint_sha256` 按稳定排序后的 `(path, size_bytes, sha256)` 序列计算：
-    - `path<TAB>size<TAB>sha256<LF>`
+- 行为 4：
+  - dataset 级 `content_fingerprint_sha256` 按稳定排序后的 `(path, uri, size_bytes, sha256)` 序列计算：
+    - `path<TAB>uri<TAB>size<TAB>sha256<LF>`
     - 再整体做 `sha256`
   - 这样文件内容不变且路径/顺序稳定时，fingerprint 可复现。
+- 行为 5：
+  - snapshot-only artifact 不会写 `files/...`，只写：
+    - `_MANIFEST.json`
+    - `_SUCCESS`
 
 ## 5. 自检结果
 
@@ -107,7 +122,13 @@ mypy .
     - `report.md`
   - 不包含 `chunking/`、`embeddings/`、`retrieval/`、`metrics/` 等越界目录。
 - `pytest tests/datasets tests/artifacts`：
-  - 通过，`86 passed`
+  - 通过，`89 passed`
+- `pytest`：
+  - 未通过，`1 failed, 335 passed`
+  - 失败点：
+    - `tests/chunking/test_external_chunking_runner.py::test_run_version_pinned_external_chunking_fails_for_commit_mismatch`
+  - 原因：
+    - 这是现有 `chunking` 侧基线失败，不在本轮允许修改范围内
 - `ruff check .`：
   - 通过
 - `mypy .`：
@@ -122,15 +143,16 @@ mypy .
 ## 6. 风险与未决项
 
 - 已知风险：
-  - 当前 `ArtifactStore.put_file(...)` 仍以 `bytes` 为入参，所以虽然 hash 计算是流式的，写入前仍会在进程内暂存单文件字节内容。
+  - 第一版是 snapshot-only，不提供 raw 副本 materialization；如果后续需要“导入时顺手复制 raw 数据”，需要单独扩展流式写入能力。
 - 未覆盖场景：
   - 本轮没有实现后续 `raw_dataset -> normalized_dataset` 依赖连接。
 - 需要验收者重点检查的点：
   - `content_fingerprint_sha256` 的定义是否满足后续复现实验要求。
-  - `raw_dataset` 是否继续放在 `datasets/` 下，还是未来应下沉到更通用的数据资产模块。
+  - snapshot-only 语义是否与后续 normalizer 设计一致。
 
 ## 7. 交付结论
 
-- 是否建议验收：`待测试完成后确认`
+- 是否建议验收：`yes`
 - 是否建议合并：`yes`
-- 如果不能合并，卡点是什么：无
+- 如果不能合并，卡点是什么：
+  - 当前全量 `pytest` 存在一条与本任务无关的 `chunking` 基线失败，需要验收方按项目当前基线判断是否阻塞

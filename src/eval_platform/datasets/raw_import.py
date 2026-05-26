@@ -1,4 +1,4 @@
-"""Import raw dataset files from local directories or S3 prefixes."""
+"""Import raw dataset metadata from local directories or S3 prefixes."""
 
 from __future__ import annotations
 
@@ -23,9 +23,8 @@ class RawDatasetImportError(Exception):
     """Raised when raw dataset import validation fails."""
 
 
-def _read_streaming_bytes(stream: Any) -> tuple[bytes, int, str]:
+def _hash_stream(stream: Any) -> tuple[int, str]:
     digest = hashlib.sha256()
-    chunks: list[bytes] = []
     total_size = 0
 
     while True:
@@ -35,15 +34,14 @@ def _read_streaming_bytes(stream: Any) -> tuple[bytes, int, str]:
         if not isinstance(chunk, bytes):
             raise RawDatasetImportError("Stream chunk must be bytes")
         digest.update(chunk)
-        chunks.append(chunk)
         total_size += len(chunk)
 
-    return b"".join(chunks), total_size, digest.hexdigest()
+    return total_size, digest.hexdigest()
 
 
-def _read_local_file_streaming(path: Path) -> tuple[bytes, int, str]:
+def _hash_local_file(path: Path) -> tuple[int, str]:
     with path.open("rb") as handle:
-        return _read_streaming_bytes(handle)
+        return _hash_stream(handle)
 
 
 def import_raw_dataset_from_local_dir(
@@ -59,21 +57,24 @@ def import_raw_dataset_from_local_dir(
     code_git_sha: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> ArtifactManifest:
-    """Import all files under a local directory into a raw_dataset artifact."""
+    """Import local raw file metadata into a raw_dataset snapshot artifact."""
     if not source_dir.is_dir():
         raise RawDatasetImportError(f"source_dir is not a directory: {source_dir}")
 
     files: list[RawDatasetFile] = []
-    payloads: dict[str, bytes] = {}
+    source_paths = sorted(path for path in source_dir.rglob("*") if path.is_file())
 
-    source_paths = sorted(
-        path for path in source_dir.rglob("*") if path.is_file()
-    )
     for path in source_paths:
         relative_path = path.relative_to(source_dir).as_posix()
-        payload, size_bytes, sha256 = _read_local_file_streaming(path)
-        files.append(RawDatasetFile(path=relative_path, size_bytes=size_bytes, sha256=sha256))
-        payloads[relative_path] = payload
+        size_bytes, sha256 = _hash_local_file(path)
+        files.append(
+            RawDatasetFile(
+                path=relative_path,
+                uri=path.resolve().as_uri(),
+                size_bytes=size_bytes,
+                sha256=sha256,
+            )
+        )
 
     snapshot = RawDatasetSnapshot(
         source_type="local_dir",
@@ -89,7 +90,6 @@ def import_raw_dataset_from_local_dir(
         store,
         artifact_id,
         snapshot,
-        payloads,
         created_by=created_by,
         code_git_sha=code_git_sha,
     )
@@ -131,20 +131,25 @@ def import_raw_dataset_from_s3_prefix(
     code_git_sha: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> ArtifactManifest:
-    """Import all files under an S3 prefix into a raw_dataset artifact."""
+    """Import S3 raw file metadata into a raw_dataset snapshot artifact."""
     normalized_prefix = normalize_prefix(prefix)
     list_prefix = f"{normalized_prefix}/" if normalized_prefix else ""
 
     files: list[RawDatasetFile] = []
-    payloads: dict[str, bytes] = {}
 
     for key in _list_s3_keys(client, bucket, list_prefix):
         relative_path = key[len(list_prefix) :] if list_prefix else key
         relative_path = PurePosixPath(relative_path).as_posix()
         response = client.get_object(Bucket=bucket, Key=key)
-        payload, size_bytes, sha256 = _read_streaming_bytes(response["Body"])
-        files.append(RawDatasetFile(path=relative_path, size_bytes=size_bytes, sha256=sha256))
-        payloads[relative_path] = payload
+        size_bytes, sha256 = _hash_stream(response["Body"])
+        files.append(
+            RawDatasetFile(
+                path=relative_path,
+                uri=f"s3://{bucket}/{key}",
+                size_bytes=size_bytes,
+                sha256=sha256,
+            )
+        )
 
     snapshot = RawDatasetSnapshot(
         source_type="s3_prefix",
@@ -160,7 +165,6 @@ def import_raw_dataset_from_s3_prefix(
         store,
         artifact_id,
         snapshot,
-        payloads,
         created_by=created_by,
         code_git_sha=code_git_sha,
     )
