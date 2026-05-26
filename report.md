@@ -101,7 +101,7 @@ mypy .
 - commit subject：`Enforce embedding consistency gate`
 - 验收者确认的最终 commit：
 - 相关 commit 列表：
-  - `0d87081 Harden embedding consistency provenance`
+  - `Harden embedding consistency provenance`
   - `Enforce embedding consistency gate`
 
 ## 6. 风险与未决项
