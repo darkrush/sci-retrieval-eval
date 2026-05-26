@@ -21,6 +21,7 @@
   - 校验 unsupported dataset 和 normalizer mismatch
   - manifest metadata 增加 `raw_format` / `has_instructions`
   - 返工修复 `LitSearchRetrieval` 真实 raw parquet 目录分片布局
+  - 返工对齐 MTEB LitSearch 数据质量语义，过滤无可用文本 doc / orphan qrels / 无剩余 qrel query
 - 更新 `src/eval_platform/corpus_build/runner.py`
   - `CorpusBuildConfig.dataset_name` 改为从 raw normalizer registry 取 allowlist
   - 不改变 runner 阶段顺序和 artifact id 串联方式
@@ -94,6 +95,14 @@
 - 缺少 `corpus/*.parquet`、`queries/*.parquet` 或 `qrels/*.parquet` 时抛 `RawNormalizeError`。
 - `raw_source_uri` 从 shard 相对路径回退到 raw prefix，例如 `s3://bucket/raw/litsearch`。
 
+数据质量过滤策略：
+
+- `CorpusRecord.text` 取第一个非空字段：`text`、`abstract`、`title`。
+- `text` / `abstract` / `title` 都不可用的 doc 会被丢弃。
+- 指向已丢弃 doc 或缺失 doc 的 qrel 会被丢弃。
+- 没有剩余 qrel 的 query 会被丢弃。
+- 如果发生过滤，manifest metadata 写入 `filtered_corpus_count`、`dropped_corpus_count`、`dropped_qrel_count`、`dropped_query_count`。
+
 Parquet 依赖策略：
 
 - 基础安装不新增强依赖。
@@ -166,15 +175,15 @@ pytest
 ### 6.2 输出摘要
 
 - `pytest tests/datasets/test_raw_normalize.py tests/corpus_build/test_runner.py`
-  - 通过，`43 passed`
+  - 通过，`44 passed`
 - `pytest tests/datasets tests/corpus_build`
-  - 通过，`89 passed`
+  - 通过，`90 passed`
 - `ruff check .`
   - 通过
 - `mypy .`
   - 通过，`Success: no issues found in 107 source files`
 - `pytest`
-  - 通过，`468 passed`
+  - 通过，`469 passed`
 
 ## 7. 风险与未决项
 
@@ -190,7 +199,7 @@ pytest
 - 需要验收者重点检查：
   - 五个 dataset 是否都有明确 registry spec。
   - unsupported dataset 和 normalizer mismatch 是否拒绝。
-  - LitSearch parquet 目录分片排序、合并、缺组错误和 lazy import 是否清晰。
+  - LitSearch parquet 目录分片排序、合并、缺组错误、空文本过滤和 lazy import 是否清晰。
   - runner 是否只从 registry 放开 allowlist，没有复制 raw parsing。
 
 ## 8. 交付结论
@@ -202,5 +211,5 @@ pytest
 ## 9. 提交信息
 
 - 是否已提交：`yes`
-- commit subject：`Fix LitSearch parquet shard normalization`
+- commit subject：`Filter unusable LitSearch raw records`
 - 验收者确认的最终 commit：

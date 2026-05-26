@@ -396,6 +396,83 @@ def test_normalize_litsearch_parquet_dataset(
     assert manifest.metadata["raw_source_uri"] == "s3://bucket/raw/litsearch"
 
 
+def test_normalize_litsearch_parquet_filters_empty_text_docs_and_orphans(
+    store: LocalArtifactStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot, opener = _litsearch_snapshot()
+    write_raw_dataset_artifact(store, "raw_litsearch_001", snapshot)
+
+    def fake_read_parquet_records(
+        file: RawDatasetFile,
+        opener: object,
+    ) -> list[dict[str, object]]:
+        rows_by_path: dict[str, list[dict[str, object]]] = {
+            "corpus/test-00000-of-00001.parquet": [
+                {"_id": "doc-text", "title": "Text title", "text": "Body"},
+                {
+                    "_id": "doc-abstract",
+                    "title": "Abstract title",
+                    "text": "",
+                    "abstract": "Abstract body",
+                },
+                {"_id": "doc-title", "title": "Title only", "text": ""},
+                {"_id": "doc-empty", "title": " ", "text": "", "abstract": ""},
+            ],
+            "queries/test-00000-of-00001.parquet": [
+                {"_id": "q-keep", "text": "kept query"},
+                {"_id": "q-empty-doc-only", "text": "dropped doc query"},
+                {"_id": "q-missing-doc-only", "text": "missing doc query"},
+                {"_id": "q-no-qrels", "text": "no qrels query"},
+            ],
+            "qrels/test-00000-of-00001.parquet": [
+                {"query-id": "q-keep", "corpus-id": "doc-title", "score": 1},
+                {"query-id": "q-keep", "corpus-id": "doc-abstract", "score": 2},
+                {"query-id": "q-keep", "corpus-id": "doc-empty", "score": 1},
+                {
+                    "query-id": "q-empty-doc-only",
+                    "corpus-id": "doc-empty",
+                    "score": 1,
+                },
+                {
+                    "query-id": "q-missing-doc-only",
+                    "corpus-id": "doc-missing",
+                    "score": 1,
+                },
+            ],
+        }
+        return rows_by_path[file.path]
+
+    monkeypatch.setattr(raw_normalize_module, "_read_parquet_records", fake_read_parquet_records)
+
+    manifest = normalize_raw_dataset_artifact(
+        store,
+        store,
+        RawToNormalizedConfig(
+            source_artifact_id="raw_litsearch_001",
+            output_artifact_id="normalized_litsearch_001",
+            dataset_name="LitSearchRetrieval",
+        ),
+        opener=opener,
+    )
+    loaded = read_normalized_dataset_artifact(store, "normalized_litsearch_001")
+
+    assert [(record.doc_id, record.text) for record in loaded.corpus] == [
+        ("doc-text", "Body"),
+        ("doc-abstract", "Abstract body"),
+        ("doc-title", "Title only"),
+    ]
+    assert [query.query_id for query in loaded.queries] == ["q-keep"]
+    assert [(qrel.query_id, qrel.doc_id, qrel.relevance) for qrel in loaded.qrels] == [
+        ("q-keep", "doc-title", 1.0),
+        ("q-keep", "doc-abstract", 2.0),
+    ]
+    assert manifest.metadata["filtered_corpus_count"] == 3
+    assert manifest.metadata["dropped_corpus_count"] == 1
+    assert manifest.metadata["dropped_qrel_count"] == 3
+    assert manifest.metadata["dropped_query_count"] == 3
+
+
 def test_normalize_litsearch_parquet_merges_shards_in_path_order(
     store: LocalArtifactStore,
     monkeypatch: pytest.MonkeyPatch,

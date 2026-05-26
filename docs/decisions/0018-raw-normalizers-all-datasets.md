@@ -60,6 +60,14 @@ Parquet shard handling is deterministic:
 - Rows from all shards in the group are merged before constructing `NormalizedDataset`.
 - Missing shard groups fail with a message naming `corpus/*.parquet`, `queries/*.parquet`, or `qrels/*.parquet`.
 
+LitSearch corpus text uses the same data-quality semantics as the MTEB LitSearch normalizer:
+
+- `CorpusRecord.text` is the first non-empty value from `text`, `abstract`, then `title`.
+- Documents without usable `text`, `abstract`, or `title` are dropped.
+- Qrels pointing to dropped documents are dropped.
+- Queries without any remaining qrel are dropped.
+- When filtering occurs, manifest metadata records filtered and dropped counts.
+
 The `normalized_dataset` manifest continues to record the raw upstream identity and now also records:
 
 - `raw_format`
@@ -80,6 +88,7 @@ Tradeoffs:
 
 - This still does not run a real five-dataset external smoke against production S3.
 - LitSearch requires `pandas` or `pyarrow` only when the parquet shard normalizer is actually used.
+- LitSearch raw normalization intentionally drops unusable documents and orphan judgments so the output satisfies `NormalizedDataset` invariants.
 - The one-off scripts remain as historical references and are not runtime dependencies.
 
 Non-goals:

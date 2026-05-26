@@ -177,6 +177,41 @@ def _rows_to_corpus(corpus_rows: list[dict[str, Any]]) -> list[CorpusRecord]:
     ]
 
 
+def _first_non_empty_string(row: dict[str, Any], field_names: tuple[str, ...]) -> str | None:
+    for field_name in field_names:
+        value = row.get(field_name)
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
+def _rows_to_litsearch_corpus(
+    corpus_rows: list[dict[str, Any]],
+) -> tuple[list[CorpusRecord], set[str], int]:
+    corpus: list[CorpusRecord] = []
+    retained_doc_ids: set[str] = set()
+    dropped_count = 0
+
+    for row in corpus_rows:
+        text = _first_non_empty_string(row, ("text", "abstract", "title"))
+        if text is None:
+            dropped_count += 1
+            continue
+
+        doc_id = str(row["_id"])
+        title = row.get("title")
+        corpus.append(
+            CorpusRecord(
+                doc_id=doc_id,
+                title=title if isinstance(title, str) else None,
+                text=text,
+            )
+        )
+        retained_doc_ids.add(doc_id)
+
+    return corpus, retained_doc_ids, dropped_count
+
+
 def _rows_to_queries(
     query_rows: list[dict[str, Any]],
     *,
@@ -204,6 +239,31 @@ def _rows_to_qrels(qrel_rows: list[dict[str, Any]]) -> list[QrelRecord]:
         )
         for row in qrel_rows
     ]
+
+
+def _filter_litsearch_rows(
+    *,
+    query_rows: list[dict[str, Any]],
+    qrel_rows: list[dict[str, Any]],
+    retained_doc_ids: set[str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, int]:
+    doc_filtered_qrels = [
+        row for row in qrel_rows if str(row["corpus-id"]) in retained_doc_ids
+    ]
+    qrel_query_ids = {str(row["query-id"]) for row in doc_filtered_qrels}
+    filtered_query_rows = [
+        row for row in query_rows if str(row["_id"]) in qrel_query_ids
+    ]
+    retained_query_ids = {str(row["_id"]) for row in filtered_query_rows}
+    filtered_qrel_rows = [
+        row for row in doc_filtered_qrels if str(row["query-id"]) in retained_query_ids
+    ]
+    return (
+        filtered_query_rows,
+        filtered_qrel_rows,
+        len(query_rows) - len(filtered_query_rows),
+        len(qrel_rows) - len(filtered_qrel_rows),
+    )
 
 
 def _load_jsonl_tsv_dataset(
@@ -393,10 +453,30 @@ def _load_parquet_dataset(
             "shard_paths": [file.path for file in qrels_files],
         },
     )
+    corpus, retained_doc_ids, dropped_corpus_count = _rows_to_litsearch_corpus(corpus_rows)
+    filtered_query_rows, filtered_qrel_rows, dropped_query_count, dropped_qrel_count = (
+        _filter_litsearch_rows(
+            query_rows=query_rows,
+            qrel_rows=qrel_rows,
+            retained_doc_ids=retained_doc_ids,
+        )
+    )
+    metadata: dict[str, Any] = {}
+    if dropped_corpus_count or dropped_query_count or dropped_qrel_count:
+        metadata.update(
+            {
+                "filtered_corpus_count": len(corpus),
+                "dropped_corpus_count": dropped_corpus_count,
+                "dropped_qrel_count": dropped_qrel_count,
+                "dropped_query_count": dropped_query_count,
+            }
+        )
+
     return NormalizedDataset(
-        corpus=_rows_to_corpus(corpus_rows),
-        queries=_rows_to_queries(query_rows),
-        qrels=_rows_to_qrels(qrel_rows),
+        corpus=corpus,
+        queries=_rows_to_queries(filtered_query_rows),
+        qrels=_rows_to_qrels(filtered_qrel_rows),
+        metadata=metadata,
     )
 
 
