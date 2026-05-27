@@ -109,11 +109,19 @@ Each dataset plan includes three artifact-id views:
 - `artifact_ids`: compatibility alias for `generated_artifact_ids`.
 
 Without `--reuse-existing`, `generated_artifact_ids` and `resolved_artifact_ids` are the
-same. With `--reuse-existing`, any complete existing artifact selected from inventory is
-recorded in `resolved_artifact_ids`; downstream dependencies use those resolved ids.
-For example, if existing chunks and embeddings are reused, the Elasticsearch step reads the
-reused `chunked_corpus` artifact and the Milvus step reads the reused `chunked_corpus` and
-`embeddings` artifacts.
+same. With `--reuse-existing`, the planner does not independently pick one complete
+artifact per stage. It resolves one dependency-consistent chain from manifest dependencies
+and metadata, preferring the most downstream complete chain:
+
+```text
+milvus_collection -> embeddings + chunked_corpus -> normalized_dataset -> raw_dataset
+elasticsearch_index -> chunked_corpus -> normalized_dataset -> raw_dataset
+```
+
+Only artifacts proven to belong to the selected chain are recorded in
+`resolved_artifact_ids`; other stages remain `create`. Reused Elasticsearch and Milvus
+steps copy their dependency ids from the reused artifact manifest, so they cannot silently
+mix a small-sample chunks artifact with a full index/collection artifact.
 
 The current script intentionally refuses `--execute`. Real execution still needs explicit runtime clients for chunking, embedding, Elasticsearch ingest, and Milvus ingest. The generated plan is meant to drive the existing `corpus_build` runner safely without inventing another execution path.
 

@@ -21,6 +21,25 @@ from corpus_asset_common import (  # noqa: E402, I001
 )
 
 
+def _complete_record(
+    artifact_id: str,
+    *,
+    dependencies: list[tuple[str, str]] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    metadata_summary = dict(metadata or {})
+    if dependencies is not None:
+        metadata_summary["dependencies"] = [
+            {"artifact_type": artifact_type, "artifact_id": dependency_id}
+            for artifact_type, dependency_id in dependencies
+        ]
+    return {
+        "artifact_id": artifact_id,
+        "complete": True,
+        "metadata_summary": metadata_summary,
+    }
+
+
 def test_dataset_selection_supports_task_name_slug_and_all() -> None:
     assert [spec.task_name for spec in dataset_specs_for_selection("IFIRNFCorpus")] == [
         "IFIRNFCorpus"
@@ -87,14 +106,27 @@ def test_build_plan_can_reuse_existing_complete_artifacts() -> None:
             "NFCorpus": {
                 "artifacts": {
                     "raw_dataset": [
-                        {"artifact_id": "nfcorpus_old_raw", "complete": True}
+                        _complete_record("nfcorpus_old_raw")
                     ],
-                    "normalized_dataset": [],
+                    "normalized_dataset": [
+                        _complete_record(
+                            "nfcorpus_old_normalized",
+                            dependencies=[("raw_dataset", "nfcorpus_old_raw")],
+                        )
+                    ],
                     "chunked_corpus": [
-                        {"artifact_id": "nfcorpus_old_chunks", "complete": True}
+                        _complete_record(
+                            "nfcorpus_old_chunks",
+                            dependencies=[
+                                ("normalized_dataset", "nfcorpus_old_normalized")
+                            ],
+                        )
                     ],
                     "embeddings": [
-                        {"artifact_id": "nfcorpus_old_embeddings", "complete": True}
+                        _complete_record(
+                            "nfcorpus_old_embeddings",
+                            dependencies=[("chunked_corpus", "nfcorpus_old_chunks")],
+                        )
                     ],
                     "elasticsearch_index": [],
                     "milvus_collection": [],
@@ -136,6 +168,166 @@ def test_build_plan_can_reuse_existing_complete_artifacts() -> None:
     assert es_step["source_artifact_id"] == "nfcorpus_old_chunks"
     assert milvus_step["chunked_corpus_artifact_id"] == "nfcorpus_old_chunks"
     assert milvus_step["embeddings_artifact_id"] == "nfcorpus_old_embeddings"
+
+
+def test_build_plan_reuse_existing_selects_one_consistent_downstream_chain() -> None:
+    spec = DATASETS_BY_NAME["IFIRNFCorpus"]
+    inventory: dict[str, Any] = {
+        "datasets": {
+            "IFIRNFCorpus": {
+                "artifacts": {
+                    "raw_dataset": [
+                        _complete_record("depcheck_raw"),
+                        _complete_record("full_raw"),
+                    ],
+                    "normalized_dataset": [
+                        _complete_record(
+                            "depcheck_normalized",
+                            dependencies=[("raw_dataset", "depcheck_raw")],
+                        ),
+                        _complete_record(
+                            "full_normalized",
+                            dependencies=[("raw_dataset", "full_raw")],
+                        ),
+                    ],
+                    "chunked_corpus": [
+                        _complete_record(
+                            "depcheck_chunks",
+                            dependencies=[
+                                ("normalized_dataset", "depcheck_normalized")
+                            ],
+                        ),
+                        _complete_record(
+                            "full_chunks",
+                            dependencies=[("normalized_dataset", "full_normalized")],
+                        ),
+                    ],
+                    "embeddings": [
+                        _complete_record(
+                            "depcheck_embeddings",
+                            dependencies=[("chunked_corpus", "depcheck_chunks")],
+                        ),
+                        _complete_record(
+                            "full_embeddings",
+                            dependencies=[("chunked_corpus", "full_chunks")],
+                        ),
+                    ],
+                    "elasticsearch_index": [
+                        _complete_record(
+                            "full_es_index",
+                            dependencies=[("chunked_corpus", "full_chunks")],
+                        )
+                    ],
+                    "milvus_collection": [
+                        _complete_record(
+                            "full_milvus_collection",
+                            dependencies=[
+                                ("chunked_corpus", "full_chunks"),
+                                ("embeddings", "full_embeddings"),
+                            ],
+                        )
+                    ],
+                }
+            }
+        }
+    }
+
+    plan = build_plan_for_datasets(
+        datasets=[spec],
+        run_id="validator_reuse_check",
+        bucket="bucket",
+        raw_prefix="sciverse_benchmark/raw",
+        s3_prefix="test_sciverse_benchmark",
+        raw_exists_by_slug={"ifir_nfcorpus": True},
+        reuse_existing=True,
+        inventory=inventory,
+    )
+
+    dataset_plan = plan["datasets"]["IFIRNFCorpus"]
+    assert dataset_plan["resolved_artifact_ids"] == {
+        "raw_dataset": "full_raw",
+        "normalized_dataset": "full_normalized",
+        "chunked_corpus": "full_chunks",
+        "embeddings": "full_embeddings",
+        "elasticsearch_index": "full_es_index",
+        "milvus_collection": "full_milvus_collection",
+    }
+    assert {step["action"] for step in dataset_plan["steps"]} == {"reuse"}
+    assert dataset_plan["steps"][4]["source_artifact_id"] == "full_chunks"
+    assert dataset_plan["steps"][5]["chunked_corpus_artifact_id"] == "full_chunks"
+    assert dataset_plan["steps"][5]["embeddings_artifact_id"] == "full_embeddings"
+
+
+def test_reused_index_steps_use_manifest_dependencies() -> None:
+    spec = DATASETS_BY_NAME["SciFact"]
+    inventory: dict[str, Any] = {
+        "datasets": {
+            "SciFact": {
+                "artifacts": {
+                    "raw_dataset": [_complete_record("manifest_raw")],
+                    "normalized_dataset": [
+                        _complete_record(
+                            "manifest_normalized",
+                            metadata={"raw_dataset_artifact_id": "manifest_raw"},
+                        )
+                    ],
+                    "chunked_corpus": [
+                        _complete_record(
+                            "manifest_chunks",
+                            metadata={
+                                "source_normalized_dataset_artifact_id": (
+                                    "manifest_normalized"
+                                )
+                            },
+                        )
+                    ],
+                    "embeddings": [
+                        _complete_record(
+                            "manifest_embeddings",
+                            metadata={
+                                "source_chunked_corpus_artifact_id": "manifest_chunks"
+                            },
+                        )
+                    ],
+                    "elasticsearch_index": [
+                        _complete_record(
+                            "manifest_es",
+                            metadata={
+                                "source_chunked_corpus_artifact_id": "manifest_chunks"
+                            },
+                        )
+                    ],
+                    "milvus_collection": [
+                        _complete_record(
+                            "manifest_milvus",
+                            metadata={
+                                "source_chunked_corpus_artifact_id": "manifest_chunks",
+                                "source_embeddings_artifact_id": "manifest_embeddings",
+                            },
+                        )
+                    ],
+                }
+            }
+        }
+    }
+
+    plan = build_plan_for_datasets(
+        datasets=[spec],
+        run_id="newrun",
+        bucket="bucket",
+        raw_prefix="sciverse_benchmark/raw",
+        s3_prefix="test_sciverse_benchmark",
+        raw_exists_by_slug={"scifact": True},
+        reuse_existing=True,
+        inventory=inventory,
+    )
+
+    steps = plan["datasets"]["SciFact"]["steps"]
+    assert steps[4]["action"] == "reuse"
+    assert steps[4]["source_artifact_id"] == "manifest_chunks"
+    assert steps[5]["action"] == "reuse"
+    assert steps[5]["chunked_corpus_artifact_id"] == "manifest_chunks"
+    assert steps[5]["embeddings_artifact_id"] == "manifest_embeddings"
 
 
 def test_build_plan_is_dry_run_and_has_no_external_clients() -> None:

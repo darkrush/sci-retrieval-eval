@@ -38,6 +38,15 @@
   - Milvus 阶段 `chunked_corpus_artifact_id` 指向复用的 chunks artifact。
   - Milvus 阶段 `embeddings_artifact_id` 指向复用的 embeddings artifact。
 
+### 2.2 二次返工修复
+
+- 修复 `--reuse-existing` 每个 stage 独立贪心选择 complete artifact 导致混链的问题。
+- 复用选择现在从 inventory manifest dependency / metadata 构建轻量依赖链，优先选择最下游自洽链：
+  - `milvus_collection -> embeddings + chunked_corpus -> normalized_dataset -> raw_dataset`
+  - `elasticsearch_index -> chunked_corpus -> normalized_dataset -> raw_dataset`
+- 如果某个 artifact 无法证明属于同一条链，不会静默复用；对应 stage 保持 `action=create`。
+- 复用 ES / Milvus artifact 时，step 中的依赖字段来自该 artifact manifest，而不是重新用其它 stage 的 resolved id 推导。
+
 ## 3. 真实 raw 数据格式依据
 
 已参考：
@@ -105,8 +114,8 @@ milvus_collection
 
 - `generated_artifact_ids` 始终表示当前 `run_id` 对应的新 artifact ids。
 - `resolved_artifact_ids` 表示真实执行时后续阶段应消费的 ids。
-- 如果 inventory 中存在 complete artifact 并被复用，`resolved_artifact_ids` 会记录复用的旧 id。
-- ES/Milvus 依赖字段使用 resolved ids，不再硬编码回当前 `run_id` 的新 id。
+- 只有 dependency / metadata 能证明属于同一条链的 complete artifact 才会被复用。
+- ES/Milvus 复用步骤直接使用自身 manifest 记录的依赖字段，不再混用其它链路 artifact。
 
 ## 5. 当前 S3 Inventory 摘要
 
@@ -188,6 +197,8 @@ python scripts/build_real_corpus_assets.py \
 - build plan 阶段顺序为 raw -> normalized -> chunks -> embeddings -> ES -> Milvus。
 - dry-run plan 不包含外部 clients / secrets。
 - reuse-existing 时 resolved ids 会传递到 ES / Milvus 依赖字段。
+- reuse-existing 在多条 complete 链并存时选择依赖自洽链，不混用 depcheck 小链和 full 主链。
+- reuse-existing 的 ES / Milvus 依赖字段来自被复用 artifact manifest。
 - raw prefix 缺失时报错。
 - inventory 识别完整 artifact。
 - inventory 识别缺失 `_SUCCESS`。
@@ -210,15 +221,15 @@ pytest
 ### 8.2 输出摘要
 
 - `pytest tests/scripts`
-  - `11 passed in 0.09s`
+  - `13 passed in 0.15s`
 - `pytest tests/datasets tests/chunking tests/embeddings tests/indexes`
-  - `347 passed in 1.20s`
+  - `347 passed in 1.37s`
 - `ruff check .`
   - `All checks passed!`
 - `mypy .`
   - `Success: no issues found in 140 source files`
 - `pytest`
-  - `554 passed in 1.79s`
+  - `556 passed in 2.02s`
 
 ## 9. 范围自检
 
@@ -249,5 +260,5 @@ pytest
 ## 12. 提交信息
 
 - 是否已提交：`yes`
-- commit subject：`Fix reused corpus asset dependencies`
+- commit subject：`Resolve reused corpus asset chains`
 - 验收者确认的最终 commit：由验收者用 `git log -1 --oneline` 确认

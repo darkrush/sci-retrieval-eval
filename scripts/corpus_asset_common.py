@@ -66,6 +66,7 @@ _MANIFEST_SUMMARY_KEYS = {
     "raw_dataset_artifact_id",
     "source_normalized_dataset_artifact_id",
     "source_chunked_corpus_artifact_id",
+    "source_embeddings_artifact_id",
     "chunked_corpus_artifact_id",
     "embeddings_artifact_id",
     "index_name",
@@ -76,6 +77,16 @@ _MANIFEST_SUMMARY_KEYS = {
     "verified_count",
     "verified_document_count",
     "verified_entity_count",
+}
+
+_DEPENDENCY_METADATA_KEYS = {
+    "raw_dataset": ("raw_dataset_artifact_id",),
+    "normalized_dataset": ("source_normalized_dataset_artifact_id",),
+    "chunked_corpus": (
+        "source_chunked_corpus_artifact_id",
+        "chunked_corpus_artifact_id",
+    ),
+    "embeddings": ("source_embeddings_artifact_id", "embeddings_artifact_id"),
 }
 
 
@@ -400,23 +411,29 @@ def build_plan_for_datasets(
             raise CorpusAssetError(f"Raw prefix does not exist for {spec.task_name}")
 
         generated_artifact_ids = artifact_ids_for_dataset(spec, run_id)
+        complete_records = _complete_inventory_records(inventory, spec.task_name)
+        records_by_id = _records_by_id(complete_records)
+        reuse_artifact_ids = (
+            _resolve_reusable_artifact_chain(records_by_id)
+            if reuse_existing and inventory is not None
+            else {}
+        )
         resolved_artifact_ids: dict[str, str] = {}
         steps: list[dict[str, Any]] = []
         source_artifact_id: str | None = None
 
         for artifact_type in ARTIFACT_STAGE_ORDER:
-            artifact_id = generated_artifact_ids[artifact_type]
-            action = "create"
-            if reuse_existing and inventory is not None:
-                existing = _first_complete_inventory_artifact(
-                    inventory,
-                    spec.task_name,
-                    artifact_type,
-                )
-                if existing is not None:
-                    artifact_id = str(existing["artifact_id"])
-                    action = "reuse"
+            artifact_id = reuse_artifact_ids.get(
+                artifact_type,
+                generated_artifact_ids[artifact_type],
+            )
+            action = "reuse" if artifact_type in reuse_artifact_ids else "create"
             resolved_artifact_ids[artifact_type] = artifact_id
+            reused_record = (
+                records_by_id.get(artifact_type, {}).get(artifact_id)
+                if action == "reuse"
+                else None
+            )
 
             step: dict[str, Any] = {
                 "stage": artifact_type,
@@ -431,12 +448,30 @@ def build_plan_for_datasets(
                 step["raw_source_uri"] = raw_prefix_uri(bucket, raw_prefix, spec)
             if artifact_type == "elasticsearch_index":
                 step["index_name"] = index_name_for_dataset(spec, run_id)
-                step["source_artifact_id"] = resolved_artifact_ids["chunked_corpus"]
+                if reused_record is not None:
+                    step["source_artifact_id"] = _dependency_id(
+                        reused_record,
+                        "chunked_corpus",
+                    )
+                else:
+                    step["source_artifact_id"] = resolved_artifact_ids["chunked_corpus"]
             if artifact_type == "milvus_collection":
                 step.pop("source_artifact_id", None)
                 step["collection_name"] = collection_name_for_dataset(spec, run_id)
-                step["chunked_corpus_artifact_id"] = resolved_artifact_ids["chunked_corpus"]
-                step["embeddings_artifact_id"] = resolved_artifact_ids["embeddings"]
+                if reused_record is not None:
+                    step["chunked_corpus_artifact_id"] = _dependency_id(
+                        reused_record,
+                        "chunked_corpus",
+                    )
+                    step["embeddings_artifact_id"] = _dependency_id(
+                        reused_record,
+                        "embeddings",
+                    )
+                else:
+                    step["chunked_corpus_artifact_id"] = resolved_artifact_ids[
+                        "chunked_corpus"
+                    ]
+                    step["embeddings_artifact_id"] = resolved_artifact_ids["embeddings"]
             steps.append(step)
             source_artifact_id = artifact_id
 
@@ -460,15 +495,221 @@ def build_plan_for_datasets(
     }
 
 
-def _first_complete_inventory_artifact(
-    inventory: dict[str, Any],
+def _complete_inventory_records(
+    inventory: dict[str, Any] | None,
     task_name: str,
-    artifact_type: str,
-) -> dict[str, Any] | None:
+) -> dict[str, list[dict[str, Any]]]:
+    if inventory is None:
+        return {artifact_type: [] for artifact_type in ARTIFACT_STAGE_ORDER}
     dataset = inventory.get("datasets", {}).get(task_name, {})
-    for record in dataset.get("artifacts", {}).get(artifact_type, []):
-        if record.get("complete"):
-            return record
+    return {
+        artifact_type: [
+            record
+            for record in dataset.get("artifacts", {}).get(artifact_type, [])
+            if record.get("complete")
+        ]
+        for artifact_type in ARTIFACT_STAGE_ORDER
+    }
+
+
+def _records_by_id(
+    records_by_type: dict[str, list[dict[str, Any]]],
+) -> dict[str, dict[str, dict[str, Any]]]:
+    return {
+        artifact_type: {
+            str(record["artifact_id"]): record
+            for record in records
+            if record.get("artifact_id") is not None
+        }
+        for artifact_type, records in records_by_type.items()
+    }
+
+
+def _resolve_reusable_artifact_chain(
+    records_by_id: dict[str, dict[str, dict[str, Any]]],
+) -> dict[str, str]:
+    """Resolve one dependency-consistent reusable artifact chain."""
+
+    for record in records_by_id.get("milvus_collection", {}).values():
+        chain = _trace_milvus_chain(records_by_id, str(record["artifact_id"]))
+        if chain is None:
+            continue
+        matching_es_id = _find_dependent_record_id(
+            records_by_id,
+            "elasticsearch_index",
+            "chunked_corpus",
+            chain["chunked_corpus"],
+        )
+        if matching_es_id is not None:
+            chain["elasticsearch_index"] = matching_es_id
+        return chain
+
+    for record in records_by_id.get("elasticsearch_index", {}).values():
+        chain = _trace_elasticsearch_chain(records_by_id, str(record["artifact_id"]))
+        if chain is None:
+            continue
+        matching_embedding_id = _find_dependent_record_id(
+            records_by_id,
+            "embeddings",
+            "chunked_corpus",
+            chain["chunked_corpus"],
+        )
+        if matching_embedding_id is not None:
+            chain["embeddings"] = matching_embedding_id
+            matching_milvus_id = _find_milvus_record_id(
+                records_by_id,
+                chunked_corpus_id=chain["chunked_corpus"],
+                embeddings_id=matching_embedding_id,
+            )
+            if matching_milvus_id is not None:
+                chain["milvus_collection"] = matching_milvus_id
+        return chain
+
+    for record in records_by_id.get("embeddings", {}).values():
+        chain = _trace_embedding_chain(records_by_id, str(record["artifact_id"]))
+        if chain is not None:
+            return chain
+
+    for record in records_by_id.get("chunked_corpus", {}).values():
+        chain = _trace_chunked_chain(records_by_id, str(record["artifact_id"]))
+        if chain is not None:
+            return chain
+
+    for record in records_by_id.get("normalized_dataset", {}).values():
+        chain = _trace_normalized_chain(records_by_id, str(record["artifact_id"]))
+        if chain is not None:
+            return chain
+
+    for record in records_by_id.get("raw_dataset", {}).values():
+        return {"raw_dataset": str(record["artifact_id"])}
+
+    return {}
+
+
+def _trace_milvus_chain(
+    records_by_id: dict[str, dict[str, dict[str, Any]]],
+    artifact_id: str,
+) -> dict[str, str] | None:
+    record = records_by_id.get("milvus_collection", {}).get(artifact_id)
+    if record is None:
+        return None
+    chunked_corpus_id = _dependency_id(record, "chunked_corpus")
+    embeddings_id = _dependency_id(record, "embeddings")
+    if chunked_corpus_id is None or embeddings_id is None:
+        return None
+    chunk_chain = _trace_chunked_chain(records_by_id, chunked_corpus_id)
+    embedding_chain = _trace_embedding_chain(records_by_id, embeddings_id)
+    if chunk_chain is None or embedding_chain is None:
+        return None
+    if embedding_chain["chunked_corpus"] != chunked_corpus_id:
+        return None
+    return {
+        **chunk_chain,
+        "embeddings": embeddings_id,
+        "milvus_collection": artifact_id,
+    }
+
+
+def _trace_elasticsearch_chain(
+    records_by_id: dict[str, dict[str, dict[str, Any]]],
+    artifact_id: str,
+) -> dict[str, str] | None:
+    record = records_by_id.get("elasticsearch_index", {}).get(artifact_id)
+    if record is None:
+        return None
+    chunked_corpus_id = _dependency_id(record, "chunked_corpus")
+    if chunked_corpus_id is None:
+        return None
+    chunk_chain = _trace_chunked_chain(records_by_id, chunked_corpus_id)
+    if chunk_chain is None:
+        return None
+    return {**chunk_chain, "elasticsearch_index": artifact_id}
+
+
+def _trace_embedding_chain(
+    records_by_id: dict[str, dict[str, dict[str, Any]]],
+    artifact_id: str,
+) -> dict[str, str] | None:
+    record = records_by_id.get("embeddings", {}).get(artifact_id)
+    if record is None:
+        return None
+    chunked_corpus_id = _dependency_id(record, "chunked_corpus")
+    if chunked_corpus_id is None:
+        return None
+    chunk_chain = _trace_chunked_chain(records_by_id, chunked_corpus_id)
+    if chunk_chain is None:
+        return None
+    return {**chunk_chain, "embeddings": artifact_id}
+
+
+def _trace_chunked_chain(
+    records_by_id: dict[str, dict[str, dict[str, Any]]],
+    artifact_id: str,
+) -> dict[str, str] | None:
+    record = records_by_id.get("chunked_corpus", {}).get(artifact_id)
+    if record is None:
+        return None
+    normalized_id = _dependency_id(record, "normalized_dataset")
+    if normalized_id is None:
+        return None
+    normalized_chain = _trace_normalized_chain(records_by_id, normalized_id)
+    if normalized_chain is None:
+        return None
+    return {**normalized_chain, "chunked_corpus": artifact_id}
+
+
+def _trace_normalized_chain(
+    records_by_id: dict[str, dict[str, dict[str, Any]]],
+    artifact_id: str,
+) -> dict[str, str] | None:
+    record = records_by_id.get("normalized_dataset", {}).get(artifact_id)
+    if record is None:
+        return None
+    raw_id = _dependency_id(record, "raw_dataset")
+    if raw_id is None:
+        return None
+    if raw_id not in records_by_id.get("raw_dataset", {}):
+        return None
+    return {"raw_dataset": raw_id, "normalized_dataset": artifact_id}
+
+
+def _find_dependent_record_id(
+    records_by_id: dict[str, dict[str, dict[str, Any]]],
+    artifact_type: str,
+    dependency_type: str,
+    dependency_id: str,
+) -> str | None:
+    for artifact_id, record in records_by_id.get(artifact_type, {}).items():
+        if _dependency_id(record, dependency_type) == dependency_id:
+            return artifact_id
+    return None
+
+
+def _find_milvus_record_id(
+    records_by_id: dict[str, dict[str, dict[str, Any]]],
+    *,
+    chunked_corpus_id: str,
+    embeddings_id: str,
+) -> str | None:
+    for artifact_id, record in records_by_id.get("milvus_collection", {}).items():
+        if (
+            _dependency_id(record, "chunked_corpus") == chunked_corpus_id
+            and _dependency_id(record, "embeddings") == embeddings_id
+        ):
+            return artifact_id
+    return None
+
+
+def _dependency_id(record: dict[str, Any], artifact_type: str) -> str | None:
+    metadata = record.get("metadata_summary", {})
+    for dependency in metadata.get("dependencies", []):
+        if dependency.get("artifact_type") == artifact_type:
+            artifact_id = dependency.get("artifact_id")
+            return str(artifact_id) if artifact_id else None
+    for key in _DEPENDENCY_METADATA_KEYS.get(artifact_type, ()):
+        artifact_id = metadata.get(key)
+        if artifact_id:
+            return str(artifact_id)
     return None
 
 
