@@ -226,3 +226,52 @@ mypy .
 - 是否建议验收：`yes`
 - 是否建议合并：`yes`
 - 如果不能合并，卡点是什么：无
+
+## 13. 返工记录：E1-E4 setting registry deep copy
+
+返工提交 SHA：`b4676d0eb2f6aa3b73fc909a2253ac129db8d616`
+
+阻塞问题摘要：
+
+- `settings_for_selection(...)` 原先返回 `DEFAULT_E1_E4_SETTINGS` 中的同一个 mutable `BenchmarkSettingSpec` 对象。
+- 调用方修改返回对象后会污染全局默认 E1-E4 registry，破坏默认 setting 的稳定可复现性。
+
+修复方式：
+
+- `settings_for_selection(None)` / `settings_for_selection("all")` 返回默认 registry 的 `model_copy(deep=True)`。
+- `settings_for_selection("E2-es")` 和 key list 选择同样返回 deep copy。
+- 未改变 E1-E4 字段值、顺序、public API、suite artifact schema 或 runner 行为。
+
+新增测试：
+
+- `tests/benchmark/test_settings.py::test_settings_for_selection_returns_copies_without_polluting_registry`
+  - 覆盖默认入口。
+  - 覆盖单 key 入口。
+  - 覆盖 key list 入口和输入顺序。
+
+返工验证：
+
+```bash
+pytest tests/benchmark/test_settings.py
+pytest tests/benchmark tests/artifacts/test_types.py
+pytest
+ruff check .
+mypy .
+```
+
+结果：
+
+- `pytest tests/benchmark/test_settings.py`
+  - `4 passed in 0.16s`
+- `pytest tests/benchmark tests/artifacts/test_types.py`
+  - `25 passed in 0.22s`
+- `pytest`
+  - `597 passed in 2.00s`
+- `ruff check .`
+  - `All checks passed!`
+- `mypy .`
+  - `Success: no issues found in 171 source files`
+
+外部服务访问：
+
+- 是否访问真实 S3 / ES / Milvus / embedding / rerank / rewrite：`no`
