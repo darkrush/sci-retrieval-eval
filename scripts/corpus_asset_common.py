@@ -419,6 +419,11 @@ def build_plan_for_datasets(
             else {}
         )
         resolved_artifact_ids: dict[str, str] = {}
+        generated_resource_names = {
+            "elasticsearch_index": index_name_for_dataset(spec, run_id),
+            "milvus_collection": collection_name_for_dataset(spec, run_id),
+        }
+        resolved_resource_names: dict[str, str] = {}
         steps: list[dict[str, Any]] = []
         source_artifact_id: str | None = None
 
@@ -447,18 +452,28 @@ def build_plan_for_datasets(
             if artifact_type == "raw_dataset":
                 step["raw_source_uri"] = raw_prefix_uri(bucket, raw_prefix, spec)
             if artifact_type == "elasticsearch_index":
-                step["index_name"] = index_name_for_dataset(spec, run_id)
                 if reused_record is not None:
+                    step["index_name"] = _required_metadata_value(
+                        reused_record,
+                        "index_name",
+                    )
                     step["source_artifact_id"] = _dependency_id(
                         reused_record,
                         "chunked_corpus",
                     )
                 else:
+                    step["index_name"] = generated_resource_names[
+                        "elasticsearch_index"
+                    ]
                     step["source_artifact_id"] = resolved_artifact_ids["chunked_corpus"]
+                resolved_resource_names["elasticsearch_index"] = step["index_name"]
             if artifact_type == "milvus_collection":
                 step.pop("source_artifact_id", None)
-                step["collection_name"] = collection_name_for_dataset(spec, run_id)
                 if reused_record is not None:
+                    step["collection_name"] = _required_metadata_value(
+                        reused_record,
+                        "collection_name",
+                    )
                     step["chunked_corpus_artifact_id"] = _dependency_id(
                         reused_record,
                         "chunked_corpus",
@@ -472,6 +487,10 @@ def build_plan_for_datasets(
                         "chunked_corpus"
                     ]
                     step["embeddings_artifact_id"] = resolved_artifact_ids["embeddings"]
+                    step["collection_name"] = generated_resource_names[
+                        "milvus_collection"
+                    ]
+                resolved_resource_names["milvus_collection"] = step["collection_name"]
             steps.append(step)
             source_artifact_id = artifact_id
 
@@ -481,8 +500,10 @@ def build_plan_for_datasets(
             "artifact_ids": generated_artifact_ids,
             "generated_artifact_ids": generated_artifact_ids,
             "resolved_artifact_ids": resolved_artifact_ids,
-            "elasticsearch_index_name": index_name_for_dataset(spec, run_id),
-            "milvus_collection_name": collection_name_for_dataset(spec, run_id),
+            "generated_resource_names": generated_resource_names,
+            "resolved_resource_names": resolved_resource_names,
+            "elasticsearch_index_name": resolved_resource_names["elasticsearch_index"],
+            "milvus_collection_name": resolved_resource_names["milvus_collection"],
             "steps": steps,
         }
 
@@ -711,6 +732,19 @@ def _dependency_id(record: dict[str, Any], artifact_type: str) -> str | None:
         if artifact_id:
             return str(artifact_id)
     return None
+
+
+def _required_metadata_value(record: dict[str, Any], key: str) -> str:
+    metadata = record.get("metadata_summary", {})
+    value = metadata.get(key)
+    if isinstance(value, str) and value.strip():
+        return value
+    if value is not None and str(value).strip():
+        return str(value)
+    artifact_id = record.get("artifact_id", "<unknown>")
+    raise CorpusAssetError(
+        f"Reused artifact {artifact_id!r} is missing required metadata {key!r}"
+    )
 
 
 def load_config_and_client(config_path: Path) -> tuple[PlatformConfig, Any]:

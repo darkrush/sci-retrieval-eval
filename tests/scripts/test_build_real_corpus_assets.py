@@ -216,6 +216,7 @@ def test_build_plan_reuse_existing_selects_one_consistent_downstream_chain() -> 
                         _complete_record(
                             "full_es_index",
                             dependencies=[("chunked_corpus", "full_chunks")],
+                            metadata={"index_name": "full_real_es"},
                         )
                     ],
                     "milvus_collection": [
@@ -225,6 +226,7 @@ def test_build_plan_reuse_existing_selects_one_consistent_downstream_chain() -> 
                                 ("chunked_corpus", "full_chunks"),
                                 ("embeddings", "full_embeddings"),
                             ],
+                            metadata={"collection_name": "full_real_milvus"},
                         )
                     ],
                 }
@@ -254,8 +256,20 @@ def test_build_plan_reuse_existing_selects_one_consistent_downstream_chain() -> 
     }
     assert {step["action"] for step in dataset_plan["steps"]} == {"reuse"}
     assert dataset_plan["steps"][4]["source_artifact_id"] == "full_chunks"
+    assert dataset_plan["steps"][4]["index_name"] == "full_real_es"
     assert dataset_plan["steps"][5]["chunked_corpus_artifact_id"] == "full_chunks"
     assert dataset_plan["steps"][5]["embeddings_artifact_id"] == "full_embeddings"
+    assert dataset_plan["steps"][5]["collection_name"] == "full_real_milvus"
+    assert dataset_plan["generated_resource_names"] == {
+        "elasticsearch_index": "ifir_nfcorpus_validator_reuse_check_es",
+        "milvus_collection": "ifir_nfcorpus_validator_reuse_check_milvus",
+    }
+    assert dataset_plan["resolved_resource_names"] == {
+        "elasticsearch_index": "full_real_es",
+        "milvus_collection": "full_real_milvus",
+    }
+    assert dataset_plan["elasticsearch_index_name"] == "full_real_es"
+    assert dataset_plan["milvus_collection_name"] == "full_real_milvus"
 
 
 def test_reused_index_steps_use_manifest_dependencies() -> None:
@@ -293,6 +307,7 @@ def test_reused_index_steps_use_manifest_dependencies() -> None:
                         _complete_record(
                             "manifest_es",
                             metadata={
+                                "index_name": "manifest_real_es",
                                 "source_chunked_corpus_artifact_id": "manifest_chunks"
                             },
                         )
@@ -301,6 +316,7 @@ def test_reused_index_steps_use_manifest_dependencies() -> None:
                         _complete_record(
                             "manifest_milvus",
                             metadata={
+                                "collection_name": "manifest_real_milvus",
                                 "source_chunked_corpus_artifact_id": "manifest_chunks",
                                 "source_embeddings_artifact_id": "manifest_embeddings",
                             },
@@ -325,9 +341,118 @@ def test_reused_index_steps_use_manifest_dependencies() -> None:
     steps = plan["datasets"]["SciFact"]["steps"]
     assert steps[4]["action"] == "reuse"
     assert steps[4]["source_artifact_id"] == "manifest_chunks"
+    assert steps[4]["index_name"] == "manifest_real_es"
     assert steps[5]["action"] == "reuse"
     assert steps[5]["chunked_corpus_artifact_id"] == "manifest_chunks"
     assert steps[5]["embeddings_artifact_id"] == "manifest_embeddings"
+    assert steps[5]["collection_name"] == "manifest_real_milvus"
+
+
+def test_reused_elasticsearch_index_requires_manifest_index_name() -> None:
+    spec = DATASETS_BY_NAME["SciFact"]
+    inventory: dict[str, Any] = {
+        "datasets": {
+            "SciFact": {
+                "artifacts": {
+                    "raw_dataset": [_complete_record("raw")],
+                    "normalized_dataset": [
+                        _complete_record(
+                            "normalized",
+                            dependencies=[("raw_dataset", "raw")],
+                        )
+                    ],
+                    "chunked_corpus": [
+                        _complete_record(
+                            "chunks",
+                            dependencies=[("normalized_dataset", "normalized")],
+                        )
+                    ],
+                    "embeddings": [],
+                    "elasticsearch_index": [
+                        _complete_record(
+                            "es_index",
+                            dependencies=[("chunked_corpus", "chunks")],
+                        )
+                    ],
+                    "milvus_collection": [],
+                }
+            }
+        }
+    }
+
+    with pytest.raises(
+        CorpusAssetError,
+        match="Reused artifact 'es_index' is missing required metadata 'index_name'",
+    ):
+        build_plan_for_datasets(
+            datasets=[spec],
+            run_id="newrun",
+            bucket="bucket",
+            raw_prefix="sciverse_benchmark/raw",
+            s3_prefix="test_sciverse_benchmark",
+            raw_exists_by_slug={"scifact": True},
+            reuse_existing=True,
+            inventory=inventory,
+        )
+
+
+def test_reused_milvus_collection_requires_manifest_collection_name() -> None:
+    spec = DATASETS_BY_NAME["SciFact"]
+    inventory: dict[str, Any] = {
+        "datasets": {
+            "SciFact": {
+                "artifacts": {
+                    "raw_dataset": [_complete_record("raw")],
+                    "normalized_dataset": [
+                        _complete_record(
+                            "normalized",
+                            dependencies=[("raw_dataset", "raw")],
+                        )
+                    ],
+                    "chunked_corpus": [
+                        _complete_record(
+                            "chunks",
+                            dependencies=[("normalized_dataset", "normalized")],
+                        )
+                    ],
+                    "embeddings": [
+                        _complete_record(
+                            "embeddings",
+                            dependencies=[("chunked_corpus", "chunks")],
+                        )
+                    ],
+                    "elasticsearch_index": [],
+                    "milvus_collection": [
+                        _complete_record(
+                            "milvus_collection",
+                            dependencies=[
+                                ("chunked_corpus", "chunks"),
+                                ("embeddings", "embeddings"),
+                            ],
+                        )
+                    ],
+                }
+            }
+        }
+    }
+
+    with pytest.raises(
+        CorpusAssetError,
+        match=(
+            "Reused artifact 'milvus_collection' is missing required metadata "
+            "'collection_name'"
+        ),
+    ):
+        build_plan_for_datasets(
+            datasets=[spec],
+            run_id="newrun",
+            bucket="bucket",
+            raw_prefix="sciverse_benchmark/raw",
+            s3_prefix="test_sciverse_benchmark",
+            raw_exists_by_slug={"scifact": True},
+            reuse_existing=True,
+            inventory=inventory,
+        )
 
 
 def test_build_plan_is_dry_run_and_has_no_external_clients() -> None:

@@ -65,6 +65,18 @@ Index names:
 <dataset_slug>_<run_id>_milvus
 ```
 
+These generated Elasticsearch index and Milvus collection names are only used by
+`create` steps. When an existing index or collection artifact is reused, the
+runtime resource name must come from the reused artifact manifest metadata:
+
+```text
+elasticsearch_index.metadata.index_name
+milvus_collection.metadata.collection_name
+```
+
+If a reused ES/Milvus artifact does not record that resource name, planning fails
+instead of falling back to a newly generated `<dataset_slug>_<run_id>` name.
+
 ## Inventory
 
 Inventory is read-only:
@@ -108,6 +120,12 @@ Each dataset plan includes three artifact-id views:
 - `resolved_artifact_ids`: ids that downstream stages should actually consume.
 - `artifact_ids`: compatibility alias for `generated_artifact_ids`.
 
+It also includes resource-name views:
+
+- `generated_resource_names`: ES/Milvus names that would be created for the current `run_id`.
+- `resolved_resource_names`: ES/Milvus names that downstream execution should actually use.
+- `elasticsearch_index_name` and `milvus_collection_name`: compatibility aliases for the resolved names.
+
 Without `--reuse-existing`, `generated_artifact_ids` and `resolved_artifact_ids` are the
 same. With `--reuse-existing`, the planner does not independently pick one complete
 artifact per stage. It resolves one dependency-consistent chain from manifest dependencies
@@ -121,7 +139,9 @@ elasticsearch_index -> chunked_corpus -> normalized_dataset -> raw_dataset
 Only artifacts proven to belong to the selected chain are recorded in
 `resolved_artifact_ids`; other stages remain `create`. Reused Elasticsearch and Milvus
 steps copy their dependency ids from the reused artifact manifest, so they cannot silently
-mix a small-sample chunks artifact with a full index/collection artifact.
+mix a small-sample chunks artifact with a full index/collection artifact. Reused
+Elasticsearch and Milvus steps also copy `index_name` / `collection_name` from the
+reused artifact manifest; generated resource names apply only to `create` steps.
 
 The current script intentionally refuses `--execute`. Real execution still needs explicit runtime clients for chunking, embedding, Elasticsearch ingest, and Milvus ingest. The generated plan is meant to drive the existing `corpus_build` runner safely without inventing another execution path.
 

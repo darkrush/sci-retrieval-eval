@@ -12,6 +12,7 @@
 
 ## 2. 本次改动
 
+- 合入最新 `main`，同步 #30 文档整理基线。
 - 新增共享脚本模块：
   - `scripts/corpus_asset_common.py`
 - 新增只读 inventory 入口：
@@ -46,6 +47,17 @@
   - `elasticsearch_index -> chunked_corpus -> normalized_dataset -> raw_dataset`
 - 如果某个 artifact 无法证明属于同一条链，不会静默复用；对应 stage 保持 `action=create`。
 - 复用 ES / Milvus artifact 时，step 中的依赖字段来自该 artifact manifest，而不是重新用其它 stage 的 resolved id 推导。
+
+### 2.3 三次返工修复
+
+- 修复 `--reuse-existing` 复用已有 ES / Milvus artifact 时资源名仍使用当前新 `run_id` 的问题。
+- `build_plan_for_datasets(...)` 现在同时输出：
+  - `generated_resource_names`：当前 `run_id` 创建新资源时使用的 ES / Milvus 名称。
+  - `resolved_resource_names`：后续执行实际应该使用的 ES / Milvus 名称。
+  - `elasticsearch_index_name` / `milvus_collection_name`：兼容旧输出，语义等同 resolved resource names。
+- 当 `elasticsearch_index` step 为 `action=reuse` 时，`index_name` 必须来自 reused artifact manifest 的 `metadata_summary["index_name"]`。
+- 当 `milvus_collection` step 为 `action=reuse` 时，`collection_name` 必须来自 reused artifact manifest 的 `metadata_summary["collection_name"]`。
+- 如果 reused ES / Milvus artifact 缺少对应资源名，规划阶段抛出 `CorpusAssetError`，不再静默回退到新 `run_id` 生成名。
 
 ## 3. 真实 raw 数据格式依据
 
@@ -95,6 +107,9 @@ ES / Milvus 目标名：
 <dataset_slug>_<run_id>_milvus
 ```
 
+这些 generated resource names 只适用于 `action=create`。`action=reuse` 时，ES
+`index_name` 和 Milvus `collection_name` 来自 reused artifact manifest；缺失资源名会明确失败。
+
 构建计划阶段顺序：
 
 ```text
@@ -114,8 +129,10 @@ milvus_collection
 
 - `generated_artifact_ids` 始终表示当前 `run_id` 对应的新 artifact ids。
 - `resolved_artifact_ids` 表示真实执行时后续阶段应消费的 ids。
+- `generated_resource_names` 始终表示当前 `run_id` 创建新 ES/Milvus 资源时的名字。
+- `resolved_resource_names` 表示真实执行时后续阶段应使用的 ES/Milvus 资源名。
 - 只有 dependency / metadata 能证明属于同一条链的 complete artifact 才会被复用。
-- ES/Milvus 复用步骤直接使用自身 manifest 记录的依赖字段，不再混用其它链路 artifact。
+- ES/Milvus 复用步骤直接使用自身 manifest 记录的依赖字段和资源名，不再混用其它链路 artifact，也不再误指向新 `run_id` 资源名。
 
 ## 5. 当前 S3 Inventory 摘要
 
@@ -199,6 +216,9 @@ python scripts/build_real_corpus_assets.py \
 - reuse-existing 时 resolved ids 会传递到 ES / Milvus 依赖字段。
 - reuse-existing 在多条 complete 链并存时选择依赖自洽链，不混用 depcheck 小链和 full 主链。
 - reuse-existing 的 ES / Milvus 依赖字段来自被复用 artifact manifest。
+- reuse-existing 的 ES `index_name` / Milvus `collection_name` 来自被复用 artifact manifest。
+- reused ES artifact 缺失 `index_name` 时明确抛出 `CorpusAssetError`。
+- reused Milvus artifact 缺失 `collection_name` 时明确抛出 `CorpusAssetError`。
 - raw prefix 缺失时报错。
 - inventory 识别完整 artifact。
 - inventory 识别缺失 `_SUCCESS`。
@@ -221,15 +241,15 @@ pytest
 ### 8.2 输出摘要
 
 - `pytest tests/scripts`
-  - `13 passed in 0.15s`
+  - `15 passed in 0.08s`
 - `pytest tests/datasets tests/chunking tests/embeddings tests/indexes`
-  - `347 passed in 1.37s`
+  - `347 passed in 1.18s`
 - `ruff check .`
   - `All checks passed!`
 - `mypy .`
   - `Success: no issues found in 140 source files`
 - `pytest`
-  - `556 passed in 2.02s`
+  - `558 passed in 1.81s`
 
 ## 9. 范围自检
 
@@ -239,7 +259,7 @@ pytest
 - 是否修改 HTTP rerank adapter：`no`
 - 是否实现 rewrite adapter：`no`
 - 是否提交 `.local_artifacts` 或真实 config / 密钥：`no`
-- 是否修改流程控制文档：`no`
+- 是否修改流程控制文档：`yes, only merged main/#30; no manual edits to AGENTS.md or architecture.md`
 - 是否执行真实构建：`no`
 - 是否访问真实 S3：`yes, read-only inventory / dry-run raw existence check`
 
@@ -260,5 +280,5 @@ pytest
 ## 12. 提交信息
 
 - 是否已提交：`yes`
-- commit subject：`Resolve reused corpus asset chains`
+- commit subject：`Use reused corpus asset resource names`
 - 验收者确认的最终 commit：由验收者用 `git log -1 --oneline` 确认
