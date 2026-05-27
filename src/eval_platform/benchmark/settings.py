@@ -74,12 +74,12 @@ def settings_for_selection(
     """Return default E1-E4 settings, optionally filtered by setting key."""
 
     if selection is None or selection == "all":
-        return list(DEFAULT_E1_E4_SETTINGS)
+        return [setting.model_copy(deep=True) for setting in DEFAULT_E1_E4_SETTINGS]
     selected_keys = [selection] if isinstance(selection, str) else list(selection)
     by_key = {setting.setting_key: setting for setting in DEFAULT_E1_E4_SETTINGS}
     out: list[BenchmarkSettingSpec] = []
     for key in selected_keys:
         if key not in by_key:
             raise ValueError(f"Unknown benchmark setting key: {key}")
-        out.append(by_key[key])
+        out.append(by_key[key].model_copy(deep=True))
     return out

@@ -45,3 +45,18 @@ def test_settings_for_selection_supports_all_and_keys() -> None:
 def test_settings_for_selection_rejects_unknown_key() -> None:
     with pytest.raises(ValueError, match="Unknown benchmark setting key"):
         settings_for_selection("E5-rewrite")
+
+
+def test_settings_for_selection_returns_copies_without_polluting_registry() -> None:
+    settings_for_selection()[0].rerank_enabled = True
+    assert settings_for_selection()[0].rerank_enabled is False
+    assert settings_for_selection("all")[0].rerank_enabled is False
+
+    settings_for_selection("E2-es")[0].rerank_enabled = True
+    assert settings_for_selection("E2-es")[0].rerank_enabled is False
+
+    selected = settings_for_selection(["E3-hybrid", "E1-milvus"])
+    selected[0].rerank_enabled = True
+
+    assert settings_for_selection()[2].rerank_enabled is False
+    assert settings_for_selection(["E3-hybrid", "E1-milvus"])[0].rerank_enabled is False
