@@ -399,12 +399,13 @@ def build_plan_for_datasets(
         if not raw_exists_by_slug.get(spec.slug, False):
             raise CorpusAssetError(f"Raw prefix does not exist for {spec.task_name}")
 
-        artifact_ids = artifact_ids_for_dataset(spec, run_id)
+        generated_artifact_ids = artifact_ids_for_dataset(spec, run_id)
+        resolved_artifact_ids: dict[str, str] = {}
         steps: list[dict[str, Any]] = []
         source_artifact_id: str | None = None
 
         for artifact_type in ARTIFACT_STAGE_ORDER:
-            artifact_id = artifact_ids[artifact_type]
+            artifact_id = generated_artifact_ids[artifact_type]
             action = "create"
             if reuse_existing and inventory is not None:
                 existing = _first_complete_inventory_artifact(
@@ -415,6 +416,7 @@ def build_plan_for_datasets(
                 if existing is not None:
                     artifact_id = str(existing["artifact_id"])
                     action = "reuse"
+            resolved_artifact_ids[artifact_type] = artifact_id
 
             step: dict[str, Any] = {
                 "stage": artifact_type,
@@ -429,19 +431,21 @@ def build_plan_for_datasets(
                 step["raw_source_uri"] = raw_prefix_uri(bucket, raw_prefix, spec)
             if artifact_type == "elasticsearch_index":
                 step["index_name"] = index_name_for_dataset(spec, run_id)
-                step["source_artifact_id"] = artifact_ids["chunked_corpus"]
+                step["source_artifact_id"] = resolved_artifact_ids["chunked_corpus"]
             if artifact_type == "milvus_collection":
                 step.pop("source_artifact_id", None)
                 step["collection_name"] = collection_name_for_dataset(spec, run_id)
-                step["chunked_corpus_artifact_id"] = artifact_ids["chunked_corpus"]
-                step["embeddings_artifact_id"] = artifact_ids["embeddings"]
+                step["chunked_corpus_artifact_id"] = resolved_artifact_ids["chunked_corpus"]
+                step["embeddings_artifact_id"] = resolved_artifact_ids["embeddings"]
             steps.append(step)
             source_artifact_id = artifact_id
 
         dataset_plans[spec.task_name] = {
             "slug": spec.slug,
             "raw_format": spec.raw_format,
-            "artifact_ids": artifact_ids,
+            "artifact_ids": generated_artifact_ids,
+            "generated_artifact_ids": generated_artifact_ids,
+            "resolved_artifact_ids": resolved_artifact_ids,
             "elasticsearch_index_name": index_name_for_dataset(spec, run_id),
             "milvus_collection_name": collection_name_for_dataset(spec, run_id),
             "steps": steps,

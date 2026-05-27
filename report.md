@@ -26,6 +26,18 @@
 - 更新：
   - `report.md`
 
+### 2.1 返工修复
+
+- 修复 `--reuse-existing` 时下游依赖不一致的问题。
+- `build_plan_for_datasets(...)` 现在同时输出：
+  - `generated_artifact_ids`：当前 `run_id` 会生成的 artifact ids。
+  - `resolved_artifact_ids`：后续阶段实际应该消费的 artifact ids。
+  - `artifact_ids`：兼容旧输出，语义等同 `generated_artifact_ids`。
+- 当复用已有 complete `chunked_corpus` / `embeddings` artifact 时：
+  - ES 阶段 `source_artifact_id` 指向复用的 chunks artifact。
+  - Milvus 阶段 `chunked_corpus_artifact_id` 指向复用的 chunks artifact。
+  - Milvus 阶段 `embeddings_artifact_id` 指向复用的 embeddings artifact。
+
 ## 3. 真实 raw 数据格式依据
 
 已参考：
@@ -88,6 +100,13 @@ milvus_collection
 `scripts/build_real_corpus_assets.py` 默认 dry-run，只输出计划和 artifact ids，不写 S3，不调用 ES/Milvus/embedding。
 
 `--execute` 当前显式拒绝执行。原因是现有真实运行还需要显式传入 chunker、embedding、ES、Milvus runtime clients；本轮先固定五数据集资产命名、依赖和 inventory，不引入第二套真实执行路径。
+
+`--reuse-existing` 下，计划会区分 generated ids 和 resolved ids：
+
+- `generated_artifact_ids` 始终表示当前 `run_id` 对应的新 artifact ids。
+- `resolved_artifact_ids` 表示真实执行时后续阶段应消费的 ids。
+- 如果 inventory 中存在 complete artifact 并被复用，`resolved_artifact_ids` 会记录复用的旧 id。
+- ES/Milvus 依赖字段使用 resolved ids，不再硬编码回当前 `run_id` 的新 id。
 
 ## 5. 当前 S3 Inventory 摘要
 
@@ -168,6 +187,7 @@ python scripts/build_real_corpus_assets.py \
 - artifact id 命名稳定。
 - build plan 阶段顺序为 raw -> normalized -> chunks -> embeddings -> ES -> Milvus。
 - dry-run plan 不包含外部 clients / secrets。
+- reuse-existing 时 resolved ids 会传递到 ES / Milvus 依赖字段。
 - raw prefix 缺失时报错。
 - inventory 识别完整 artifact。
 - inventory 识别缺失 `_SUCCESS`。
@@ -190,15 +210,15 @@ pytest
 ### 8.2 输出摘要
 
 - `pytest tests/scripts`
-  - `11 passed in 0.08s`
+  - `11 passed in 0.09s`
 - `pytest tests/datasets tests/chunking tests/embeddings tests/indexes`
-  - `347 passed in 1.22s`
+  - `347 passed in 1.20s`
 - `ruff check .`
   - `All checks passed!`
 - `mypy .`
   - `Success: no issues found in 140 source files`
 - `pytest`
-  - `554 passed in 2.24s`
+  - `554 passed in 1.79s`
 
 ## 9. 范围自检
 
@@ -229,5 +249,5 @@ pytest
 ## 12. 提交信息
 
 - 是否已提交：`yes`
-- commit subject：`Add five-dataset corpus asset planning`
+- commit subject：`Fix reused corpus asset dependencies`
 - 验收者确认的最终 commit：由验收者用 `git log -1 --oneline` 确认

@@ -45,7 +45,9 @@ def test_build_plan_orders_stages_and_uses_stable_names() -> None:
 
     dataset_plan = plan["datasets"]["IFIRNFCorpus"]
     assert [step["stage"] for step in dataset_plan["steps"]] == ARTIFACT_STAGE_ORDER
+    assert dataset_plan["artifact_ids"] == dataset_plan["generated_artifact_ids"]
     assert dataset_plan["artifact_ids"]["raw_dataset"] == "ifir_nfcorpus_five_ds_001_raw"
+    assert dataset_plan["resolved_artifact_ids"] == dataset_plan["generated_artifact_ids"]
     assert dataset_plan["artifact_ids"]["elasticsearch_index"] == (
         "ifir_nfcorpus_five_ds_001_es_index"
     )
@@ -88,8 +90,12 @@ def test_build_plan_can_reuse_existing_complete_artifacts() -> None:
                         {"artifact_id": "nfcorpus_old_raw", "complete": True}
                     ],
                     "normalized_dataset": [],
-                    "chunked_corpus": [],
-                    "embeddings": [],
+                    "chunked_corpus": [
+                        {"artifact_id": "nfcorpus_old_chunks", "complete": True}
+                    ],
+                    "embeddings": [
+                        {"artifact_id": "nfcorpus_old_embeddings", "complete": True}
+                    ],
                     "elasticsearch_index": [],
                     "milvus_collection": [],
                 }
@@ -108,9 +114,28 @@ def test_build_plan_can_reuse_existing_complete_artifacts() -> None:
         inventory=inventory,
     )
 
-    first_step = plan["datasets"]["NFCorpus"]["steps"][0]
+    dataset_plan = plan["datasets"]["NFCorpus"]
+    first_step = dataset_plan["steps"][0]
+    es_step = dataset_plan["steps"][4]
+    milvus_step = dataset_plan["steps"][5]
+
     assert first_step["action"] == "reuse"
     assert first_step["artifact_id"] == "nfcorpus_old_raw"
+    assert dataset_plan["generated_artifact_ids"]["chunked_corpus"] == (
+        "nfcorpus_five_ds_001_chunks"
+    )
+    assert dataset_plan["generated_artifact_ids"]["embeddings"] == (
+        "nfcorpus_five_ds_001_embeddings"
+    )
+    assert dataset_plan["resolved_artifact_ids"]["chunked_corpus"] == (
+        "nfcorpus_old_chunks"
+    )
+    assert dataset_plan["resolved_artifact_ids"]["embeddings"] == (
+        "nfcorpus_old_embeddings"
+    )
+    assert es_step["source_artifact_id"] == "nfcorpus_old_chunks"
+    assert milvus_step["chunked_corpus_artifact_id"] == "nfcorpus_old_chunks"
+    assert milvus_step["embeddings_artifact_id"] == "nfcorpus_old_embeddings"
 
 
 def test_build_plan_is_dry_run_and_has_no_external_clients() -> None:

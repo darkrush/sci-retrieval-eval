@@ -102,6 +102,19 @@ python scripts/build_real_corpus_assets.py \
 
 Use `--dataset all` to plan all five datasets.
 
+Each dataset plan includes three artifact-id views:
+
+- `generated_artifact_ids`: ids that would be created for the current `run_id`.
+- `resolved_artifact_ids`: ids that downstream stages should actually consume.
+- `artifact_ids`: compatibility alias for `generated_artifact_ids`.
+
+Without `--reuse-existing`, `generated_artifact_ids` and `resolved_artifact_ids` are the
+same. With `--reuse-existing`, any complete existing artifact selected from inventory is
+recorded in `resolved_artifact_ids`; downstream dependencies use those resolved ids.
+For example, if existing chunks and embeddings are reused, the Elasticsearch step reads the
+reused `chunked_corpus` artifact and the Milvus step reads the reused `chunked_corpus` and
+`embeddings` artifacts.
+
 The current script intentionally refuses `--execute`. Real execution still needs explicit runtime clients for chunking, embedding, Elasticsearch ingest, and Milvus ingest. The generated plan is meant to drive the existing `corpus_build` runner safely without inventing another execution path.
 
 ## Safety Rules
