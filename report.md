@@ -4,195 +4,106 @@
 
 ## 1. 任务信息
 
-- 任务名：`benchmark suite / E1-E4 batch runner base`
-- 当前分支：`feat/benchmark-suite-runner`
-- 对应指令文件：`TASK.md`
-- 开始时间：2026-05-27
-- 完成时间：2026-05-27
-- 实现提交 SHA：`b9aa6d6c7e7ca82d4226a786889013594203ca6f`
-- 报告提交 SHA：本报告单独提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA。
+- 任务名：`Track B / B1 Asset Fingerprint Spec`
+- 当前分支：`feat/asset-fingerprint-spec`
+- 对应指令文件：本地未发现 `TASK.md`，本轮以用户提供的 session init 指令为任务来源
+- 开始时间：2026-05-28
+- 完成时间：2026-05-28
+- 实现提交 SHA：提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA
 
-## 2. 新增模块和职责
+## 2. 实现内容
 
 新增：
 
-- `src/eval_platform/benchmark/settings.py`
-  - `BenchmarkSettingSpec`
-  - `DEFAULT_E1_E4_SETTINGS`
-  - `settings_for_selection(...)`
-- `src/eval_platform/benchmark/suite.py`
-  - `BenchmarkDatasetSpec`
-  - `BenchmarkSuiteRunConfig`
-  - `BenchmarkSuiteItemSummary`
-  - `BenchmarkSuiteRunSummary`
-  - `build_benchmark_run_config(...)`
-  - `run_benchmark_suite(...)`
-- `src/eval_platform/benchmark/suite_artifact.py`
-  - `write_benchmark_suite_run_artifact(...)`
-  - `read_benchmark_suite_run_artifact(...)`
-  - `BenchmarkSuiteArtifactError`
+- `src/eval_platform/assets/__init__.py`
+  - 导出 asset fingerprint public helpers。
+- `src/eval_platform/assets/fingerprint.py`
+  - `AssetFingerprintError`
+  - `AssetFingerprint`
+  - `canonical_json_hash(...)`
+  - `build_asset_fingerprint(...)`
+  - `assert_no_secret_keys(...)`
+  - raw / normalized / chunked / embeddings / ES / Milvus / retrieval / metrics stage component builders。
+- `tests/assets/__init__.py`
+- `tests/assets/test_fingerprint.py`
+  - 覆盖 canonical hash、secret guard、operational identity guard、schema validation、component builders 和等价性示例。
+- `docs/operations/experiment_variants.md`
+  - 记录后续实验变体、资产复用和最小重算规划语义。
 
 更新：
 
-- `src/eval_platform/artifacts/types.py`
-  - 新增 `BENCHMARK_SUITE_RUN_ARTIFACT_TYPE = "benchmark_suite_run"`。
-- `src/eval_platform/artifacts/__init__.py`
-  - 导出新增 artifact type。
-- `src/eval_platform/benchmark/__init__.py`
-  - 导出 suite runner、schema、artifact IO 和 E1-E4 registry。
+- `docs/architecture.md`
+  - 新增 `Asset identity and equivalence` 章节。
+  - 明确 artifact id / `run_id` 不是资产身份，dependency 只证明 lineage，资产等价由 `asset_fingerprint` 判断。
 
-## 3. E1-E4 setting 定义
+## 3. Fingerprint 语义
 
-`DEFAULT_E1_E4_SETTINGS` 顺序稳定：
+`canonical_json_hash(...)`：
 
-```text
-E1-milvus:
-  retrieval_mode="milvus"
-  sub_queries=0
-  rewrite_enabled=False
-  rerank_enabled=False
+- 使用 `json.dumps(..., sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)`。
+- 返回 sha256 hex digest。
+- dict key 顺序不同但内容相同会得到相同 hash。
+- 非 JSON-serializable value、非 string dict key、NaN/Infinity 会抛 `AssetFingerprintError`。
+- 不会 silently stringify 任意对象。
 
-E2-es:
-  retrieval_mode="es"
-  sub_queries=0
-  rewrite_enabled=False
-  rerank_enabled=False
+`AssetFingerprint`：
 
-E3-hybrid:
-  retrieval_mode="hybrid"
-  sub_queries=0
-  rewrite_enabled=False
-  rerank_enabled=False
+- `fingerprint_version >= 1`。
+- `artifact_type` 非空。
+- `sha256` 非空。
+- `components` 使用 `Field(default_factory=dict)`，避免共享默认引用。
 
-E4-hybrid-rerank:
-  retrieval_mode="hybrid"
-  sub_queries=0
-  rewrite_enabled=False
-  rerank_enabled=True
-```
+`build_asset_fingerprint(...)`：
 
-`settings_for_selection(...)` 支持：
+- hash payload 包含 `fingerprint_version`、`artifact_type`、`components`。
+- 会复制和规范化 components，不修改传入对象。
 
-- `None` / `"all"`：返回 E1-E4 全量顺序。
-- 单个 key。
-- key list，按输入顺序返回。
-- 未知 key 抛 `ValueError`。
+secret / identity guard：
 
-## 4. Suite artifact schema 摘要
+- 递归拒绝包含 `api_key`、`access_key`、`secret`、`password`、`token`、`authorization` 的 key，大小写不敏感。
+- 递归拒绝 `run_id`、`artifact_id`、`created_at`、`created_by` 这类操作性身份 key。
+- 只检查 key，不检查 value。
+- 不禁止 `endpoint_alias`，也不禁止 `endpoint_url`；文档建议优先使用 alias。
 
-新增 artifact type：
+## 4. 与 run_id 的关系
 
-```text
-benchmark_suite_run
-```
+当前系统仍可能在 artifact id、Elasticsearch index name、Milvus collection name 中携带
+`run_id`。这些是物理产物或外部资源的操作性定位信息，不是逻辑资产身份。
 
-artifact layout：
+本轮新增的 fingerprint helper 不接收 `run_id` 参数，并且在通用 payload 里拒绝 `run_id`
+key。后续 B2 / B3 可在不改变既有命名的前提下，用 fingerprint 判断不同 run 产出的资产
+是否逻辑等价。
 
-```text
-benchmark_suite_run/<suite_run_id>/summary.json
-benchmark_suite_run/<suite_run_id>/_MANIFEST.json
-benchmark_suite_run/<suite_run_id>/_SUCCESS
-```
-
-`summary.json` 包含：
-
-- `suite_run_id`
-- `item_count`
-- `dataset_count`
-- `setting_count`
-- `items`
-  - `dataset_key`
-  - `setting_key`
-  - `benchmark_run_artifact_id`
-  - `retrieval_run_artifact_id`
-  - `metrics_run_artifact_id`
-  - `main_score`
-  - `main_score_metric`
-  - `aggregate_metrics`
-
-`summary.json` 不包含 query-level metrics，也不包含 retrieval hits。
-
-manifest metadata 包含：
-
-- `stage = "benchmark_suite_run"`
-- `suite_run_id`
-- `dataset_count`
-- `setting_count`
-- `item_count`
-- `datasets` 的可审计输入摘要
-- `settings` 的可审计输入摘要
-
-manifest dependencies 当前只包含所有 child `benchmark_run` artifact。理由：child `benchmark_run` manifest 已继续记录 normalized / retrieval / metrics 依赖，suite 层保持聚合关系清晰，避免重复展开过多底层依赖。
-
-## 5. Artifact id 生成规则
-
-每个 dataset x setting item 的 id 稳定生成：
-
-```text
-<suite_run_id>__<dataset_key>__<setting_key>__retrieval
-<suite_run_id>__<dataset_key>__<setting_key>__metrics
-<suite_run_id>__<dataset_key>__<setting_key>__benchmark
-```
-
-key 校验：
-
-- `suite_run_id` / `dataset_key` / `setting_key` 不允许为空。
-- 只允许字母、数字、点、下划线、连字符。
-- 重复 dataset key / setting key 抛错。
-- 不做自动 sanitize，避免输入 key 和 artifact id 映射不透明。
-
-## 6. run_benchmark_suite 复用方式
-
-`run_benchmark_suite(...)` 不重新实现 retrieval 或 metrics。
-
-执行流程：
-
-1. 按 `datasets` 外层顺序、`settings` 内层顺序遍历。
-2. 调用 `build_benchmark_run_config(...)` 生成现有 `BenchmarkRunConfig`。
-3. 顺序调用既有 `run_benchmark(...)`。
-4. 读取 child `benchmark_run` summary。
-5. 聚合 `BenchmarkSuiteRunSummary`。
-6. 所有 child 完成后才写 suite artifact 和 `_SUCCESS`。
-
-失败行为：
-
-- 如果 child benchmark 失败，不写 `benchmark_suite_run` success marker。
-- 已完成的 child artifact 不回滚。
-
-## 7. 对既有 public API 的影响
-
-既有 public API 未改变：
-
-- `run_benchmark(...)`
-- `BenchmarkRunConfig`
-- `BenchmarkRunSummary`
-- retrieval / metrics / benchmark_run artifact schema
-
-新增 public exports 仅追加 suite 相关入口，不改变原有 import。
-
-## 8. 测试结果
+## 5. 验证结果
 
 已运行：
 
 ```bash
-pytest tests/benchmark tests/artifacts/test_types.py
-pytest
+PYTHONPATH=src pytest tests/assets/test_fingerprint.py
+PYTHONPATH=src pytest
 ruff check .
 mypy .
 ```
 
 结果：
 
-- `pytest tests/benchmark tests/artifacts/test_types.py`
-  - `24 passed in 0.22s`
-- `pytest`
-  - `596 passed in 2.22s`
+- `PYTHONPATH=src pytest tests/assets/test_fingerprint.py`
+  - `24 passed in 0.09s`
+- `PYTHONPATH=src pytest`
+  - `624 passed in 2.96s`
 - `ruff check .`
   - `All checks passed!`
 - `mypy .`
-  - `Success: no issues found in 171 source files`
+  - `Success: no issues found in 175 source files`
 
-## 9. 外部服务访问
+环境说明：
+
+- 本 shell 中普通 `python -c "import eval_platform"` 会解析到兄弟目录
+  `/home/qiujiuantao/codex_project/sci-base/sci-retrieval-eval/src/eval_platform/__init__.py`。
+- 因此本轮 pytest 使用 `PYTHONPATH=src`，确保测试当前
+  `/home/qiujiuantao/codex_project/sci-base/sci-retrieval-eval-dev` 工作区源码。
+
+## 6. 外部服务访问
 
 - 是否访问真实 S3：`no`
 - 是否访问真实 ES：`no`
@@ -201,146 +112,25 @@ mypy .
 - 是否访问真实 rerank：`no`
 - 是否访问真实 rewrite：`no`
 
-本轮只使用本地 fake client 和本地 artifact store 测试。
+本轮只运行本地单元测试。
 
-## 10. 未实现项
+## 7. 未实现项
 
-按 `TASK.md` 要求，本轮未实现：
+按 B1 范围，本轮未实现：
 
-- CLI。
-- E5/E6。
-- rewrite setting。
-- comparison report。
-- 并发调度。
-- 真实五数据集运行。
-- 真实配置读取或真实外部服务接入。
+- planner 行为变更。
+- artifact writer 全量接入 `asset_fingerprint`。
+- corpus asset stage override。
+- minimal rebuild planner。
+- benchmark variant spec。
+- force rebuild stages。
+- pinned artifacts。
+- 真实 baseline 或真实外部服务运行。
 
-## 11. 风险与未决项
+## 8. 风险与建议
 
-- suite manifest dependencies 只记录 child `benchmark_run`，底层 normalized / retrieval / metrics 依赖通过 child manifest 追踪。
-- 本轮没有实现真实五数据集 asset discovery；suite 输入要求显式提供 dataset asset spec。
-- suite runner 当前顺序执行，后续并发调度需要单独设计失败语义和部分成功记录。
-
-## 12. 交付结论
-
-- 是否建议验收：`yes`
-- 是否建议合并：`yes`
-- 如果不能合并，卡点是什么：无
-
-## 13. 返工记录：E1-E4 setting registry deep copy
-
-返工提交 SHA：`b4676d0eb2f6aa3b73fc909a2253ac129db8d616`
-
-阻塞问题摘要：
-
-- `settings_for_selection(...)` 原先返回 `DEFAULT_E1_E4_SETTINGS` 中的同一个 mutable `BenchmarkSettingSpec` 对象。
-- 调用方修改返回对象后会污染全局默认 E1-E4 registry，破坏默认 setting 的稳定可复现性。
-
-修复方式：
-
-- `settings_for_selection(None)` / `settings_for_selection("all")` 返回默认 registry 的 `model_copy(deep=True)`。
-- `settings_for_selection("E2-es")` 和 key list 选择同样返回 deep copy。
-- 未改变 E1-E4 字段值、顺序、public API、suite artifact schema 或 runner 行为。
-
-新增测试：
-
-- `tests/benchmark/test_settings.py::test_settings_for_selection_returns_copies_without_polluting_registry`
-  - 覆盖默认入口。
-  - 覆盖单 key 入口。
-  - 覆盖 key list 入口和输入顺序。
-
-返工验证：
-
-```bash
-pytest tests/benchmark/test_settings.py
-pytest tests/benchmark tests/artifacts/test_types.py
-pytest
-ruff check .
-mypy .
-```
-
-结果：
-
-- `pytest tests/benchmark/test_settings.py`
-  - `4 passed in 0.16s`
-- `pytest tests/benchmark tests/artifacts/test_types.py`
-  - `25 passed in 0.22s`
-- `pytest`
-  - `597 passed in 2.00s`
-- `ruff check .`
-  - `All checks passed!`
-- `mypy .`
-  - `Success: no issues found in 171 source files`
-
-外部服务访问：
-
-- 是否访问真实 S3 / ES / Milvus / embedding / rerank / rewrite：`no`
-
-## 14. 开发记录：benchmark suite query_limit + E1-E4 runbook
-
-分支名：`feat/benchmark-suite-query-limit-and-runbook`
-
-实现提交 SHA：`183516cb91b219e1379a1ae568e1beb00830b576`
-
-新增 `query_limit` 行为：
-
-- `BenchmarkSuiteRunConfig` 新增 `query_limit: int | None = Field(default=None, gt=0)`。
-- 默认 `None`，保持原有全量查询行为。
-- `query_limit=3`、`query_limit=50` 等正整数合法。
-- `query_limit=0` 或负数由 Pydantic 校验报错。
-- `build_benchmark_run_config(...)` 生成 child `RetrievalRunConfig` 时传入 `suite_config.query_limit`。
-- `query_limit` 只影响 child retrieval config，不影响 metrics config。
-- artifact id 生成规则、E1-E4 setting 语义、suite summary schema 均未改变。
-
-suite manifest metadata：
-
-- `_suite_manifest_metadata(...)` 已记录 `query_limit`。
-- `query_limit=None` 会写入 manifest metadata，便于区分 full baseline。
-- `query_limit=3` / `50` 会写入 manifest metadata，便于审计 smoke / stability run。
-
-新增 runbook：
-
-- `docs/operations/e1_e4_benchmark_suite.md`
-
-runbook 覆盖：
-
-- 每个 dataset 需要显式提供的 asset spec。
-- normalized -> chunked -> embeddings -> ES/Milvus 同链路约束。
-- E1-E4 setting 语义。
-- baseline 必须保持 `trace_mode = replay`。
-- 推荐执行顺序：1 dataset smoke、5 dataset smoke、query_limit=50、full baseline。
-- 输出检查项。
-- 本轮不实现 CLI、真实运行、E5/E6、variant spec、query analysis、comparison report。
-
-测试命令和结果：
-
-```bash
-pytest tests/benchmark
-pytest
-ruff check .
-mypy .
-```
-
-结果：
-
-- `pytest tests/benchmark`
-  - `24 passed in 0.32s`
-- `pytest`
-  - `600 passed in 2.49s`
-- `ruff check .`
-  - `All checks passed!`
-- `mypy .`
-  - `Success: no issues found in 171 source files`
-
-外部服务访问：
-
-- 是否访问真实 S3 / ES / Milvus / embedding / rerank / rewrite：`no`
-
-未实现项：
-
-- CLI。
-- 真实五数据集运行。
-- E5/E6。
-- variant spec。
-- query analysis artifact。
-- comparison report。
+- 当前只是 fingerprint 基础设施；现有 planner 仍按 complete marker 和 dependency chain 做复用判断。
+- 后续 B2 建议先把 asset fingerprint 写入 manifest metadata，再在 reuse planning 中增加
+  `complete + artifact_type + dependency-compatible chain + fingerprint match` 四项联合校验。
+- 对于用户指出的 `run_id` 问题，建议保留现有 artifact/resource 命名作为物理定位方式，
+  但所有逻辑等价判断都迁移到 `asset_fingerprint`。
