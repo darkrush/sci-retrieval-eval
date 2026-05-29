@@ -10,7 +10,8 @@
 - 基线：已合入最新 `origin/main` / `e006ada Update README with architecture and benchmark results (#38)`
 - 开始时间：2026-05-28
 - 完成时间：2026-05-30
-- 实现提交 SHA：提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA
+- 实现提交 SHA：`56a885450abf85e39d1646244864f16ed1b6fdb8`
+- 报告提交 SHA：本报告单独提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA
 
 ## 2. 实现内容
 
