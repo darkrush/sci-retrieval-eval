@@ -10,8 +10,9 @@ name、Milvus collection name 中。它不应进入资产 fingerprint，也不�
 是否逻辑等价的依据。
 
 资产逻辑身份由 `asset_fingerprint` 表示。fingerprint 只包含影响资产内容或行为的稳定
-components，例如上游资产 fingerprint、dataset、normalizer、chunker commit、chunk
-params、embedding model、index schema、retrieval params 和 metric params。
+components，例如上游资产 fingerprint、dataset、normalizer、chunker Git commit、
+chunk params、embedding model/revision/call params、index schema、retrieval search
+params、rerank/rewrite 身份和 metric params。
 
 ## 2. Reuse Checks
 
@@ -41,6 +42,20 @@ rerun metrics_run
 rerun benchmark_run / benchmark_suite_run
 ```
 
+只改变 chunker `git_commit` 或 `chunker_entrypoint`：
+
+```text
+reuse raw_dataset
+reuse normalized_dataset
+rebuild chunked_corpus
+rebuild embeddings
+rebuild elasticsearch_index
+rebuild milvus_collection
+rerun retrieval_run
+rerun metrics_run
+rerun benchmark_run / benchmark_suite_run
+```
+
 只改变 chunk params：
 
 ```text
@@ -49,6 +64,34 @@ reuse normalized_dataset
 rebuild chunked_corpus
 rebuild embeddings
 rebuild elasticsearch_index
+rebuild milvus_collection
+rerun retrieval_run
+rerun metrics_run
+rerun benchmark_run / benchmark_suite_run
+```
+
+只改变 ES mapping/settings/builder params：
+
+```text
+reuse raw_dataset
+reuse normalized_dataset
+reuse chunked_corpus
+reuse embeddings
+rebuild elasticsearch_index
+reuse milvus_collection
+rerun retrieval_run
+rerun metrics_run
+rerun benchmark_run / benchmark_suite_run
+```
+
+只改变 Milvus schema/metric/index params：
+
+```text
+reuse raw_dataset
+reuse normalized_dataset
+reuse chunked_corpus
+reuse embeddings
+reuse elasticsearch_index
 rebuild milvus_collection
 rerun retrieval_run
 rerun metrics_run

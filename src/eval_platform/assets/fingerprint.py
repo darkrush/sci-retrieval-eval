@@ -154,11 +154,13 @@ def normalized_dataset_fingerprint_components(
 def chunked_corpus_fingerprint_components(
     *,
     normalized_dataset_fingerprint: str,
+    chunker_source: str,
     chunker_name: str,
-    chunker_commit_sha: str,
+    source_git_remote_url: str,
+    git_commit: str,
     chunk_params: Mapping[str, Any],
     schema_version: str,
-    chunker_repo_url: str | None = None,
+    chunker_entrypoint: str | None = None,
 ) -> dict[str, Any]:
     """Build fingerprint components for a chunked corpus."""
 
@@ -167,12 +169,17 @@ def chunked_corpus_fingerprint_components(
             normalized_dataset_fingerprint,
             "normalized_dataset_fingerprint",
         ),
+        "chunker_source": _require_non_empty(chunker_source, "chunker_source"),
         "chunker_name": _require_non_empty(chunker_name, "chunker_name"),
-        "chunker_commit_sha": _require_non_empty(
-            chunker_commit_sha,
-            "chunker_commit_sha",
+        "source_git_remote_url": _require_non_empty(
+            source_git_remote_url,
+            "source_git_remote_url",
         ),
-        "chunker_repo_url": _optional_non_empty(chunker_repo_url, "chunker_repo_url"),
+        "git_commit": _require_non_empty(git_commit, "git_commit"),
+        "chunker_entrypoint": _optional_non_empty(
+            chunker_entrypoint,
+            "chunker_entrypoint",
+        ),
         "chunk_params": _normalize_mapping(chunk_params, "chunk_params"),
         "schema_version": _require_non_empty(schema_version, "schema_version"),
     }
@@ -183,30 +190,34 @@ def chunked_corpus_fingerprint_components(
 def embeddings_fingerprint_components(
     *,
     chunked_corpus_fingerprint: str,
+    embedding_source: str,
     model_name: str,
+    model_revision: str | None,
     embedding_dim: int,
-    provider: str | None = None,
     endpoint_alias: str | None = None,
     api_version: str | None = None,
+    input_field: str = "text",
+    call_params: Mapping[str, Any] | None = None,
     normalized: bool | None = None,
-    preprocessing: Mapping[str, Any] | None = None,
+    storage_type: str | None = None,
 ) -> dict[str, Any]:
     """Build fingerprint components for chunk embeddings."""
 
-    if embedding_dim <= 0:
-        raise AssetFingerprintError("embedding_dim must be greater than 0")
     components = {
         "chunked_corpus_fingerprint": _require_non_empty(
             chunked_corpus_fingerprint,
             "chunked_corpus_fingerprint",
         ),
+        "embedding_source": _require_non_empty(embedding_source, "embedding_source"),
         "model_name": _require_non_empty(model_name, "model_name"),
-        "embedding_dim": embedding_dim,
-        "provider": _optional_non_empty(provider, "provider"),
+        "model_revision": _optional_non_empty(model_revision, "model_revision"),
+        "embedding_dim": _require_positive_int(embedding_dim, "embedding_dim"),
         "endpoint_alias": _optional_non_empty(endpoint_alias, "endpoint_alias"),
         "api_version": _optional_non_empty(api_version, "api_version"),
+        "input_field": _require_non_empty(input_field, "input_field"),
+        "call_params": _normalize_optional_mapping(call_params, "call_params"),
         "normalized": normalized,
-        "preprocessing": _normalize_optional_mapping(preprocessing, "preprocessing"),
+        "storage_type": _optional_non_empty(storage_type, "storage_type"),
     }
     assert_no_secret_keys(components)
     return components
@@ -215,10 +226,13 @@ def embeddings_fingerprint_components(
 def elasticsearch_index_fingerprint_components(
     *,
     chunked_corpus_fingerprint: str,
+    builder_source: str,
+    code_git_commit: str,
+    builder_entrypoint: str,
+    builder_params: Mapping[str, Any],
     mapping: Mapping[str, Any],
-    analyzer: Mapping[str, Any] | None = None,
+    settings: Mapping[str, Any],
     ingest_params: Mapping[str, Any] | None = None,
-    builder_version: str,
 ) -> dict[str, Any]:
     """Build fingerprint components for an Elasticsearch index."""
 
@@ -227,10 +241,16 @@ def elasticsearch_index_fingerprint_components(
             chunked_corpus_fingerprint,
             "chunked_corpus_fingerprint",
         ),
+        "builder_source": _require_non_empty(builder_source, "builder_source"),
+        "code_git_commit": _require_non_empty(code_git_commit, "code_git_commit"),
+        "builder_entrypoint": _require_non_empty(
+            builder_entrypoint,
+            "builder_entrypoint",
+        ),
+        "builder_params": _normalize_mapping(builder_params, "builder_params"),
         "mapping": _normalize_mapping(mapping, "mapping"),
-        "analyzer": _normalize_optional_mapping(analyzer, "analyzer"),
+        "settings": _normalize_mapping(settings, "settings"),
         "ingest_params": _normalize_optional_mapping(ingest_params, "ingest_params"),
-        "builder_version": _require_non_empty(builder_version, "builder_version"),
     }
     assert_no_secret_keys(components)
     return components
@@ -240,11 +260,14 @@ def milvus_collection_fingerprint_components(
     *,
     chunked_corpus_fingerprint: str,
     embeddings_fingerprint: str,
+    builder_source: str,
+    code_git_commit: str,
+    builder_entrypoint: str,
+    builder_params: Mapping[str, Any],
     schema: Mapping[str, Any],
     metric_type: str,
     index_type: str,
     index_params: Mapping[str, Any],
-    builder_version: str,
 ) -> dict[str, Any]:
     """Build fingerprint components for a Milvus collection."""
 
@@ -257,11 +280,17 @@ def milvus_collection_fingerprint_components(
             embeddings_fingerprint,
             "embeddings_fingerprint",
         ),
+        "builder_source": _require_non_empty(builder_source, "builder_source"),
+        "code_git_commit": _require_non_empty(code_git_commit, "code_git_commit"),
+        "builder_entrypoint": _require_non_empty(
+            builder_entrypoint,
+            "builder_entrypoint",
+        ),
+        "builder_params": _normalize_mapping(builder_params, "builder_params"),
         "schema": _normalize_mapping(schema, "schema"),
         "metric_type": _require_non_empty(metric_type, "metric_type"),
         "index_type": _require_non_empty(index_type, "index_type"),
         "index_params": _normalize_mapping(index_params, "index_params"),
-        "builder_version": _require_non_empty(builder_version, "builder_version"),
     }
     assert_no_secret_keys(components)
     return components
@@ -271,12 +300,14 @@ def retrieval_run_fingerprint_components(
     *,
     normalized_dataset_fingerprint: str,
     retrieval_mode: str,
-    retrieval_params: Mapping[str, Any],
+    search_params: Mapping[str, Any],
+    trace_mode: str,
     elasticsearch_index_fingerprint: str | None = None,
     milvus_collection_fingerprint: str | None = None,
-    embedding_query_fingerprint: str | None = None,
-    rerank_fingerprint: str | None = None,
-    rewrite_fingerprint: str | None = None,
+    query_source: Mapping[str, Any] | None = None,
+    query_embedding: Mapping[str, Any] | None = None,
+    rewrite: Mapping[str, Any] | None = None,
+    rerank: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build fingerprint components for a retrieval run."""
 
@@ -286,7 +317,6 @@ def retrieval_run_fingerprint_components(
             "normalized_dataset_fingerprint",
         ),
         "retrieval_mode": _require_non_empty(retrieval_mode, "retrieval_mode"),
-        "retrieval_params": _normalize_mapping(retrieval_params, "retrieval_params"),
         "elasticsearch_index_fingerprint": _optional_non_empty(
             elasticsearch_index_fingerprint,
             "elasticsearch_index_fingerprint",
@@ -295,18 +325,15 @@ def retrieval_run_fingerprint_components(
             milvus_collection_fingerprint,
             "milvus_collection_fingerprint",
         ),
-        "embedding_query_fingerprint": _optional_non_empty(
-            embedding_query_fingerprint,
-            "embedding_query_fingerprint",
+        "query_source": _normalize_optional_mapping(query_source, "query_source"),
+        "query_embedding": _normalize_optional_mapping(
+            query_embedding,
+            "query_embedding",
         ),
-        "rerank_fingerprint": _optional_non_empty(
-            rerank_fingerprint,
-            "rerank_fingerprint",
-        ),
-        "rewrite_fingerprint": _optional_non_empty(
-            rewrite_fingerprint,
-            "rewrite_fingerprint",
-        ),
+        "search_params": _normalize_mapping(search_params, "search_params"),
+        "rewrite": _normalize_optional_mapping(rewrite, "rewrite"),
+        "rerank": _normalize_optional_mapping(rerank, "rerank"),
+        "trace_mode": _require_non_empty(trace_mode, "trace_mode"),
     }
     assert_no_secret_keys(components)
     return components
@@ -316,6 +343,9 @@ def metrics_run_fingerprint_components(
     *,
     normalized_dataset_fingerprint: str,
     retrieval_run_fingerprint: str,
+    metrics_source: str,
+    code_git_commit: str,
+    metrics_entrypoint: str,
     metric_params: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Build fingerprint components for a metrics run."""
@@ -328,6 +358,12 @@ def metrics_run_fingerprint_components(
         "retrieval_run_fingerprint": _require_non_empty(
             retrieval_run_fingerprint,
             "retrieval_run_fingerprint",
+        ),
+        "metrics_source": _require_non_empty(metrics_source, "metrics_source"),
+        "code_git_commit": _require_non_empty(code_git_commit, "code_git_commit"),
+        "metrics_entrypoint": _require_non_empty(
+            metrics_entrypoint,
+            "metrics_entrypoint",
         ),
         "metric_params": _normalize_mapping(metric_params, "metric_params"),
     }
@@ -347,6 +383,14 @@ def _optional_non_empty(value: str | None, field_name: str) -> str | None:
     if value is None:
         return None
     return _require_non_empty(value, field_name)
+
+
+def _require_positive_int(value: int, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise AssetFingerprintError(f"{field_name} must be an integer")
+    if value <= 0:
+        raise AssetFingerprintError(f"{field_name} must be greater than 0")
+    return value
 
 
 def _normalize_optional_mapping(

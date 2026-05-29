@@ -162,12 +162,12 @@ sha256。它必须排除：
 - 上游资产 fingerprint
 - dataset name、raw source、raw file fingerprints
 - normalizer name / version / params
-- chunker repo URL / commit / chunk params / schema version
-- embedding provider / model / endpoint alias / dim / preprocessing
-- Elasticsearch mapping / analyzer / ingest params
-- Milvus schema / metric / index params
-- retrieval params / rerank fingerprint / rewrite fingerprint
-- metrics params
+- chunker source / name / Git remote / commit / entrypoint / params / schema version
+- embedding source / model / revision / endpoint alias / dim / call params / normalized / storage type
+- Elasticsearch builder provenance / mapping / settings / ingest params
+- Milvus builder provenance / schema / metric / index type / index params
+- retrieval query source / query embedding / search params / rewrite / rerank / trace mode
+- metrics source / code commit / entrypoint / metric params
 
 后续 planner 判断复用时，至少需要同时满足：
 
@@ -188,3 +188,19 @@ sha256。它必须排除：
 当前主线仍保留既有 artifact id 和 dependency resolution 行为。本节定义的是后续资产
 复用和最小重算规划所需的身份语义，不要求现有 planner 在同一 PR 内改为按 fingerprint
 决策。
+
+当前 fingerprint 等价范围覆盖 8 类核心资产：
+
+```text
+raw_dataset
+normalized_dataset
+chunked_corpus
+embeddings
+elasticsearch_index
+milvus_collection
+retrieval_run
+metrics_run
+```
+
+`benchmark_run` 和 `benchmark_suite_run` 暂不做 fingerprint 等价判断；它们是低成本的
+编排 / 汇总 artifact，复用收益不如底层资产显著。
