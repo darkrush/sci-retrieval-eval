@@ -4,133 +4,48 @@
 
 ## 1. 任务信息
 
-- 任务名：`Track B / PR1 Asset Fingerprint Foundations`
+- 任务名：`Track B1 验收返工 / asset fingerprint 语义修正`
 - 当前分支：`feat/asset-fingerprint-spec`
 - 对应指令文件：`TASK.md`
-- 基线：已合入最新 `origin/main` / `e006ada Update README with architecture and benchmark results (#38)`
-- 开始时间：2026-05-28
-- 完成时间：2026-05-30
-- 实现提交 SHA：`56a885450abf85e39d1646244864f16ed1b6fdb8`
-- 报告提交 SHA：本报告单独提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA
+- 返工基线：`origin/feat/asset-fingerprint-spec` / `ecd6b33 Update asset fingerprint report`
+- 返工完成时间：2026-05-30
+- 返工实现提交 SHA：`6db94aee5d37fd2d23412c38198a9c21625cd98f`
+- 报告提交 SHA：本报告提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA
 
-## 2. 实现内容
+## 2. 本轮返工内容
 
-PR1 只覆盖 fingerprint schema/helper/spec/docs/tests，不接入 artifact writer，不改变 planner 行为。
+本轮仍只覆盖 B1 fingerprint schema/helper/spec/docs/tests，不接入 artifact writer，不改变
+planner / runner 行为。
 
-新增 / 更新：
+已修复：
 
 - `src/eval_platform/assets/fingerprint.py`
-  - `canonical_json_hash(...)`
-  - `AssetFingerprint`
-  - `build_asset_fingerprint(...)`
-  - `assert_no_secret_keys(...)`
-  - 8 类核心资产 component builders：
-    - `raw_dataset`
-    - `normalized_dataset`
-    - `chunked_corpus`
-    - `embeddings`
-    - `elasticsearch_index`
-    - `milvus_collection`
-    - `retrieval_run`
-    - `metrics_run`
+  - 扩展运行实例字段 guard：`run_id`、`artifact_id`、`created_at`、`updated_at`、
+    `started_at`、`completed_at`、`timestamp`、`created_time`、`updated_time`、
+    `request_id`、`trace_file`、`trace_path` 等不允许进入 fingerprint payload。
+  - 新增物理资源字段 guard，用于自由参数字典，拒绝 `index_name`、`collection_name`、
+    `endpoint_url`、`url`、`uri`、`host`、`port`，以及 `_url` / `_uri` / `_host` /
+    `_port` 后缀字段。
+  - 保留稳定身份字段例外：`raw_source_uri`、`source_git_remote_url`、`endpoint_alias`。
+  - `file_fingerprints` 在 raw dataset builder 中按 `path`、`sha256`、`size_bytes`
+    canonical sort，避免对象存储 listing 顺序影响 raw dataset fingerprint。
 - `tests/assets/test_fingerprint.py`
-  - 覆盖 canonical hash、secret/operational key guard、schema validation、8 类 builder 字段、等价性变化和最小评测链路。
+  - 新增 raw file listing 顺序不影响 fingerprint 的测试。
+  - 新增 `path` / `sha256` / `size_bytes` 变化会改变 raw dataset fingerprint 的测试。
+  - 新增自由参数字典拒绝物理资源名、真实 URL/URI、host/port、request id、trace path、
+    timestamp 字段的测试。
+  - 补齐 secret fragments：`api_key`、`access_key`、`secret`、`password`、`token`、
+    `authorization`。
 - `docs/decisions/0023-asset-fingerprint-spec.md`
-  - 记录 PR1 最终 fingerprint 设计。
+  - 明确物理资源名、真实服务地址、request id、trace path、时间戳不进入 fingerprint。
+  - 明确 `raw_source_uri`、`source_git_remote_url`、`endpoint_alias` 的允许边界。
+  - 明确 `file_fingerprints` 是集合语义并 canonical sort。
 - `docs/architecture.md`
-  - 更新资产身份与等价性总览。
+  - 同步资产身份和等价性边界。
 - `docs/operations/experiment_variants.md`
-  - 更新最小重算示例。
+  - 同步实验变体和后续复用规划的参数边界。
 
-## 3. 核心字段
-
-`raw_dataset`：
-
-- `dataset_name`
-- `raw_source_uri`
-- `raw_format`
-- `split`
-- `file_fingerprints`
-
-`normalized_dataset`：
-
-- `raw_dataset_fingerprint`
-- `normalizer_name`
-- `normalizer_version`
-- `schema_version`
-- `normalizer_params`
-
-`chunked_corpus`：
-
-- `normalized_dataset_fingerprint`
-- `chunker_source`
-- `chunker_name`
-- `source_git_remote_url`
-- `git_commit`
-- `chunker_entrypoint`
-- `chunk_params`
-- `schema_version`
-
-`embeddings`：
-
-- `chunked_corpus_fingerprint`
-- `embedding_source`
-- `model_name`
-- `model_revision`
-- `embedding_dim`
-- `endpoint_alias`
-- `api_version`
-- `input_field`
-- `call_params`
-- `normalized`
-- `storage_type`
-
-`elasticsearch_index`：
-
-- `chunked_corpus_fingerprint`
-- `builder_source`
-- `code_git_commit`
-- `builder_entrypoint`
-- `builder_params`
-- `mapping`
-- `settings`
-- `ingest_params`
-
-`milvus_collection`：
-
-- `chunked_corpus_fingerprint`
-- `embeddings_fingerprint`
-- `builder_source`
-- `code_git_commit`
-- `builder_entrypoint`
-- `builder_params`
-- `schema`
-- `metric_type`
-- `index_type`
-- `index_params`
-
-`retrieval_run`：
-
-- `normalized_dataset_fingerprint`
-- `retrieval_mode`
-- ES / Milvus index fingerprints
-- `query_source`
-- `query_embedding`
-- `search_params`
-- `rewrite`
-- `rerank`
-- `trace_mode`
-
-`metrics_run`：
-
-- `normalized_dataset_fingerprint`
-- `retrieval_run_fingerprint`
-- `metrics_source`
-- `code_git_commit`
-- `metrics_entrypoint`
-- `metric_params`
-
-## 4. Guard 语义
+## 3. Guard 语义
 
 `canonical_json_hash(...)` 使用 canonical JSON：
 
@@ -141,40 +56,18 @@ separators=(",", ":")
 allow_nan=False
 ```
 
-并且拒绝：
+并拒绝：
 
 - 非 JSON-serializable value。
 - 非 string dict key。
-- secret-like key：`api_key`、`access_key`、`secret`、`password`、`token`、`authorization`。
-- operational identity key：`run_id`、`artifact_id`、`created_at`、`created_by`。
+- secret-like key。
+- 运行实例身份和 timestamp 字段。
 
-`git_status` / dirty tree / commit reachable 属于构建前置校验和 manifest metadata，不进入 fingerprint。
+各 stage component builder 会在自由参数字典中额外拒绝物理连接信息。ES URL、Milvus URI、
+ES index name、Milvus collection name 应记录在 artifact manifest metadata 或运行配置中，
+不参与逻辑资产等价判断。
 
-ES URL、Milvus URI、index name、collection name 应记录在 artifact manifest metadata 中，方便访问已有物理资源，但不进入 fingerprint。
-
-## 5. 最小评测集实际测试
-
-`tests/assets/test_fingerprint.py::test_minimal_e4_eval_builds_core_fingerprints_and_runs_metrics`
-构造了一个本地 tiny eval：
-
-- 1 个 normalized dataset。
-- fake ES BM25 recall。
-- fake Milvus vector recall。
-- hybrid RRF fusion。
-- fake rerank。
-- `trace_mode="replay"`。
-- `run_metrics(...)` 计算 doc-level metrics。
-
-该测试同时为一条完整链路构造 8 类核心资产 fingerprint，并验证：
-
-- ES hits、Milvus hits、fused hits、rerank input、rerank hits、final hits 都写入 trace。
-- 最终 retrieval result 命中 qrel doc。
-- metrics main score 大于 0。
-- `metrics_run` fingerprint 绑定 `retrieval_run_fingerprint`。
-
-本测试不访问真实 ES、Milvus、embedding、rerank 或 rewrite 服务。
-
-## 6. 验证结果
+## 4. 验证结果
 
 已运行：
 
@@ -188,15 +81,15 @@ mypy .
 结果：
 
 - `PYTHONPATH=src pytest tests/assets/test_fingerprint.py`
-  - `30 passed in 0.19s`
+  - `71 passed in 0.16s`
 - `PYTHONPATH=src pytest`
-  - `642 passed in 2.02s`
+  - `683 passed in 1.91s`
 - `ruff check .`
   - `All checks passed!`
 - `mypy .`
   - `Success: no issues found in 175 source files`
 
-## 7. 外部服务访问
+## 5. 外部服务访问
 
 - 是否访问真实 S3：`no`
 - 是否访问真实 ES：`no`
@@ -205,9 +98,9 @@ mypy .
 - 是否访问真实 rerank：`no`
 - 是否访问真实 rewrite：`no`
 
-## 8. 未实现项
+## 6. 未实现项
 
-按 PR1 范围，本轮未实现：
+按 B1 / PR1 范围，本轮未实现：
 
 - artifact writer 接入 `asset_fingerprint`。
 - planner 行为变更。
@@ -218,7 +111,7 @@ mypy .
 - benchmark variant spec。
 - 真实外部服务运行。
 
-## 9. 后续建议
+## 7. 后续建议
 
 PR2：各 artifact writer / runner 将 `asset_fingerprint` 写入 manifest metadata。
 PR3：reuse planner 增加 `complete + artifact_type + dependency-compatible chain + fingerprint match` 联合校验。
