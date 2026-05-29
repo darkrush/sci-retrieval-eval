@@ -14,6 +14,19 @@ components，例如上游资产 fingerprint、dataset、normalizer、chunker Git
 chunk params、embedding model/revision/call params、index schema、retrieval search
 params、rerank/rewrite 身份和 metric params。
 
+fingerprint 不包含物理资源名、真实服务地址、运行实例 ID、时间戳、request id、trace
+path 或凭证。ES URL、Milvus URI、ES index name、Milvus collection name 应作为 artifact
+manifest metadata 或运行配置记录，用来定位外部资源，而不是参与资产等价判断。
+`raw_source_uri` 和 `source_git_remote_url` 是例外：它们分别描述 raw 数据快照来源和
+chunker 源码身份，属于稳定 identity 字段。`endpoint_alias` 也可进入 fingerprint，
+因为它是受控的逻辑服务别名，不是直接访问地址。
+
+自由参数字典必须保持语义参数边界，例如 `builder_params`、`ingest_params`、
+`search_params`、`query_embedding`、`rewrite`、`rerank`、`call_params` 中不能夹带
+`index_name`、`collection_name`、真实 endpoint URL、host/port、request id 或 trace
+path。`raw_dataset.file_fingerprints` 是文件集合语义，计算前会按 canonical order 排序，
+因此不会因为对象存储 listing 顺序不同而改变 fingerprint。
+
 ## 2. Reuse Checks
 
 复用已有 artifact 时，后续 planner 至少应同时检查：

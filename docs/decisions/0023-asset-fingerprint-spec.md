@@ -35,10 +35,12 @@ Every asset fingerprint must exclude:
 
 - `run_id`
 - `artifact_id`
-- `created_at` or other timestamps
+- `created_at`, `updated_at`, `started_at`, `completed_at`, `timestamp`, or other timestamps
 - `created_by`
 - API keys, access keys, tokens, passwords, Authorization headers, and other secrets
 - physical resource names such as Elasticsearch index name or Milvus collection name
+- real service addresses such as direct endpoint URLs, hosts, ports, ES URLs, or Milvus URIs
+- request ids, trace file names, and trace paths
 
 Every reusable artifact should eventually be reused only when all checks pass:
 
@@ -50,6 +52,16 @@ Every reusable artifact should eventually be reused only when all checks pass:
 Result summaries, counts, validation flags, connection aliases, and physical locations are useful
 artifact manifest metadata, but they do not enter the fingerprint unless they directly define asset
 semantics.
+
+`raw_source_uri` and `source_git_remote_url` are allowed stable identity fields: they identify the
+raw data source snapshot and chunker source repository, respectively. They are not interchangeable
+with real service connection fields in free-form parameter dictionaries. `endpoint_alias` is also
+allowed because it is a controlled logical alias rather than a direct service URL.
+
+Free-form parameter dictionaries such as `builder_params`, `ingest_params`, `search_params`,
+`query_embedding`, `rewrite`, `rerank`, `call_params`, and `metric_params` must reject physical
+connection or run-instance keys including `index_name`, `collection_name`, endpoint URLs, hosts,
+ports, request ids, and trace paths.
 
 ## Raw Dataset
 
@@ -79,6 +91,8 @@ Notes:
 - `raw_source_uri` alone is not enough because a URI can be overwritten.
 - `sha256` is the preferred content identity. `etag` is audit metadata unless its content-hash
   semantics are explicitly guaranteed.
+- `file_fingerprints` has set semantics. Builders canonical-sort entries by `path`, `sha256`, and
+  `size_bytes` before hashing so object-store listing order cannot change the fingerprint.
 
 ## Normalized Dataset
 

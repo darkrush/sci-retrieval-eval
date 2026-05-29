@@ -68,9 +68,42 @@ def test_canonical_hash_rejects_secret_key_inside_list_of_dicts() -> None:
         canonical_json_hash({"files": [{"path": "a"}, {"token": "redacted"}]})
 
 
+@pytest.mark.parametrize(
+    "secret_key",
+    [
+        "api_key",
+        "access_key",
+        "client_secret",
+        "password",
+        "token",
+        "Authorization",
+    ],
+)
+def test_canonical_hash_rejects_all_secret_key_fragments(secret_key: str) -> None:
+    with pytest.raises(AssetFingerprintError):
+        canonical_json_hash({secret_key: "redacted"})
+
+
 def test_canonical_hash_rejects_operational_identity_key() -> None:
     with pytest.raises(AssetFingerprintError):
         canonical_json_hash({"run_id": "experiment-001"})
+
+
+@pytest.mark.parametrize(
+    "timestamp_key",
+    [
+        "created_at",
+        "updated_at",
+        "started_at",
+        "completed_at",
+        "timestamp",
+        "created_time",
+        "updated_time",
+    ],
+)
+def test_canonical_hash_rejects_timestamp_identity_keys(timestamp_key: str) -> None:
+    with pytest.raises(AssetFingerprintError):
+        canonical_json_hash({timestamp_key: "2026-05-30T00:00:00Z"})
 
 
 def test_build_asset_fingerprint_returns_stable_fingerprint() -> None:
@@ -137,6 +170,82 @@ def test_raw_dataset_components() -> None:
     }
     assert "run_id" not in components
     assert "artifact_id" not in components
+
+
+def test_raw_dataset_file_fingerprints_are_canonical_ordered() -> None:
+    first = raw_dataset_fingerprint_components(
+        dataset_name="NFCorpus",
+        raw_source_uri="s3://bucket/raw/nfcorpus/",
+        raw_format="jsonl",
+        split="test",
+        file_fingerprints=[
+            {"path": "queries.jsonl", "size_bytes": 45, "sha256": "queries-sha"},
+            {"path": "corpus.jsonl", "size_bytes": 123, "sha256": "corpus-sha"},
+        ],
+    )
+    second = raw_dataset_fingerprint_components(
+        dataset_name="NFCorpus",
+        raw_source_uri="s3://bucket/raw/nfcorpus/",
+        raw_format="jsonl",
+        split="test",
+        file_fingerprints=[
+            {"path": "corpus.jsonl", "size_bytes": 123, "sha256": "corpus-sha"},
+            {"path": "queries.jsonl", "size_bytes": 45, "sha256": "queries-sha"},
+        ],
+    )
+
+    assert first == second
+    assert [item["path"] for item in first["file_fingerprints"] or []] == [
+        "corpus.jsonl",
+        "queries.jsonl",
+    ]
+    assert _fingerprint("raw_dataset", first).sha256 == _fingerprint(
+        "raw_dataset",
+        second,
+    ).sha256
+
+
+@pytest.mark.parametrize(
+    ("field_name", "new_value"),
+    [
+        ("path", "corpus-v2.jsonl"),
+        ("sha256", "corpus-sha-v2"),
+        ("size_bytes", 124),
+    ],
+)
+def test_changing_file_fingerprint_changes_raw_dataset_fingerprint(
+    field_name: str,
+    new_value: Any,
+) -> None:
+    base_files = [
+        {"path": "corpus.jsonl", "size_bytes": 123, "sha256": "corpus-sha"},
+        {"path": "queries.jsonl", "size_bytes": 45, "sha256": "queries-sha"},
+    ]
+    changed_files = [dict(item) for item in base_files]
+    changed_files[0][field_name] = new_value
+
+    base = _fingerprint(
+        "raw_dataset",
+        raw_dataset_fingerprint_components(
+            dataset_name="NFCorpus",
+            raw_source_uri="s3://bucket/raw/nfcorpus/",
+            raw_format="jsonl",
+            split="test",
+            file_fingerprints=base_files,
+        ),
+    )
+    changed = _fingerprint(
+        "raw_dataset",
+        raw_dataset_fingerprint_components(
+            dataset_name="NFCorpus",
+            raw_source_uri="s3://bucket/raw/nfcorpus/",
+            raw_format="jsonl",
+            split="test",
+            file_fingerprints=changed_files,
+        ),
+    )
+
+    assert base.sha256 != changed.sha256
 
 
 def test_normalized_dataset_components() -> None:
@@ -270,6 +379,11 @@ def test_embeddings_components_validate_embedding_dim() -> None:
         )
 
 
+def test_embeddings_call_params_reject_real_endpoint_url() -> None:
+    with pytest.raises(AssetFingerprintError):
+        _embeddings_components(call_params={"endpoint_url": "http://real-endpoint/v1"})
+
+
 def test_elasticsearch_index_components() -> None:
     components = elasticsearch_index_fingerprint_components(
         chunked_corpus_fingerprint="chunk-sha",
@@ -298,6 +412,11 @@ def test_elasticsearch_index_components() -> None:
     assert components["ingest_params"] == {}
     assert "index_name" not in components
     assert "elasticsearch_url" not in components
+
+
+def test_elasticsearch_builder_params_reject_physical_index_name() -> None:
+    with pytest.raises(AssetFingerprintError):
+        _es_components(builder_params={"index_name": "physical-index"})
 
 
 def test_milvus_collection_components() -> None:
@@ -331,6 +450,11 @@ def test_milvus_collection_components() -> None:
     assert components["index_params"] == {"M": 16}
     assert "collection_name" not in components
     assert "milvus_uri" not in components
+
+
+def test_milvus_builder_params_reject_physical_collection_name() -> None:
+    with pytest.raises(AssetFingerprintError):
+        _milvus_components(builder_params={"collection_name": "physical-collection"})
 
 
 def test_retrieval_run_components() -> None:
@@ -377,6 +501,67 @@ def test_retrieval_run_components() -> None:
     assert components["rerank"]["model_name"] == "bge-reranker"
     assert components["rewrite"] is None
     assert components["trace_mode"] == "replay"
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("index_name", "physical-index"),
+        ("collection_name", "physical-collection"),
+        ("endpoint_url", "http://real-endpoint/v1"),
+        ("elasticsearch_url", "http://real-es:9200"),
+        ("milvus_uri", "http://real-milvus:19530"),
+        ("url", "http://real-service"),
+        ("uri", "http://real-service"),
+        ("host", "127.0.0.1"),
+        ("port", 9200),
+        ("request_id", "request-1"),
+        ("trace_file", "trace.jsonl"),
+        ("trace_path", "/tmp/trace.jsonl"),
+        ("timestamp", "2026-05-30T00:00:00Z"),
+        ("updated_at", "2026-05-30T00:00:00Z"),
+        ("started_at", "2026-05-30T00:00:00Z"),
+        ("completed_at", "2026-05-30T00:00:00Z"),
+        ("created_time", "2026-05-30T00:00:00Z"),
+        ("updated_time", "2026-05-30T00:00:00Z"),
+    ],
+)
+def test_retrieval_free_params_reject_runtime_and_physical_keys(
+    key: str,
+    value: Any,
+) -> None:
+    with pytest.raises(AssetFingerprintError):
+        _retrieval_components(search_params={"backend": {key: value}})
+
+
+@pytest.mark.parametrize(
+    "query_embedding",
+    [
+        {"endpoint_url": "http://real-endpoint/v1/embeddings"},
+        {"url": "http://real-endpoint/v1/embeddings"},
+    ],
+)
+def test_retrieval_query_embedding_rejects_real_endpoint_keys(
+    query_embedding: dict[str, Any],
+) -> None:
+    with pytest.raises(AssetFingerprintError):
+        _retrieval_components(query_embedding=query_embedding)
+
+
+def test_stable_identity_url_fields_are_allowed() -> None:
+    raw = raw_dataset_fingerprint_components(
+        dataset_name="NFCorpus",
+        raw_source_uri="s3://bucket/raw/nfcorpus/",
+        raw_format="jsonl",
+    )
+    chunked = _chunked_components(
+        source_git_remote_url="https://github.com/example/chunker.git",
+    )
+    embeddings = _embeddings_components(endpoint_alias="embedding-prod")
+
+    assert raw["raw_source_uri"] == "s3://bucket/raw/nfcorpus/"
+    assert chunked["source_git_remote_url"] == "https://github.com/example/chunker.git"
+    assert embeddings["endpoint_alias"] == "embedding-prod"
 
 
 def test_metrics_run_components() -> None:

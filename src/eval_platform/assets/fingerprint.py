@@ -23,7 +23,34 @@ OPERATIONAL_IDENTITY_KEYS = frozenset(
         "artifact_id",
         "created_at",
         "created_by",
+        "created_time",
+        "completed_at",
+        "request_id",
         "run_id",
+        "started_at",
+        "timestamp",
+        "trace_file",
+        "trace_path",
+        "updated_at",
+        "updated_time",
+    }
+)
+PHYSICAL_RESOURCE_KEYS = frozenset(
+    {
+        "collection_name",
+        "endpoint_url",
+        "host",
+        "index_name",
+        "port",
+        "uri",
+        "url",
+    }
+)
+PHYSICAL_RESOURCE_KEY_SUFFIXES = ("_url", "_uri", "_host", "_port")
+STABLE_RESOURCE_IDENTITY_KEYS = frozenset(
+    {
+        "raw_source_uri",
+        "source_git_remote_url",
     }
 )
 
@@ -112,7 +139,7 @@ def raw_dataset_fingerprint_components(
         "raw_source_uri": _require_non_empty(raw_source_uri, "raw_source_uri"),
         "raw_format": _require_non_empty(raw_format, "raw_format"),
         "split": _optional_non_empty(split, "split"),
-        "file_fingerprints": _normalize_optional_mapping_sequence(
+        "file_fingerprints": _normalize_file_fingerprints(
             file_fingerprints,
             "file_fingerprints",
         ),
@@ -145,6 +172,7 @@ def normalized_dataset_fingerprint_components(
         "normalizer_params": _normalize_optional_mapping(
             normalizer_params,
             "normalizer_params",
+            reject_physical_keys=True,
         ),
     }
     assert_no_secret_keys(components)
@@ -180,7 +208,11 @@ def chunked_corpus_fingerprint_components(
             chunker_entrypoint,
             "chunker_entrypoint",
         ),
-        "chunk_params": _normalize_mapping(chunk_params, "chunk_params"),
+        "chunk_params": _normalize_mapping(
+            chunk_params,
+            "chunk_params",
+            reject_physical_keys=True,
+        ),
         "schema_version": _require_non_empty(schema_version, "schema_version"),
     }
     assert_no_secret_keys(components)
@@ -215,7 +247,11 @@ def embeddings_fingerprint_components(
         "endpoint_alias": _optional_non_empty(endpoint_alias, "endpoint_alias"),
         "api_version": _optional_non_empty(api_version, "api_version"),
         "input_field": _require_non_empty(input_field, "input_field"),
-        "call_params": _normalize_optional_mapping(call_params, "call_params"),
+        "call_params": _normalize_optional_mapping(
+            call_params,
+            "call_params",
+            reject_physical_keys=True,
+        ),
         "normalized": normalized,
         "storage_type": _optional_non_empty(storage_type, "storage_type"),
     }
@@ -247,10 +283,18 @@ def elasticsearch_index_fingerprint_components(
             builder_entrypoint,
             "builder_entrypoint",
         ),
-        "builder_params": _normalize_mapping(builder_params, "builder_params"),
+        "builder_params": _normalize_mapping(
+            builder_params,
+            "builder_params",
+            reject_physical_keys=True,
+        ),
         "mapping": _normalize_mapping(mapping, "mapping"),
         "settings": _normalize_mapping(settings, "settings"),
-        "ingest_params": _normalize_optional_mapping(ingest_params, "ingest_params"),
+        "ingest_params": _normalize_optional_mapping(
+            ingest_params,
+            "ingest_params",
+            reject_physical_keys=True,
+        ),
     }
     assert_no_secret_keys(components)
     return components
@@ -286,11 +330,19 @@ def milvus_collection_fingerprint_components(
             builder_entrypoint,
             "builder_entrypoint",
         ),
-        "builder_params": _normalize_mapping(builder_params, "builder_params"),
+        "builder_params": _normalize_mapping(
+            builder_params,
+            "builder_params",
+            reject_physical_keys=True,
+        ),
         "schema": _normalize_mapping(schema, "schema"),
         "metric_type": _require_non_empty(metric_type, "metric_type"),
         "index_type": _require_non_empty(index_type, "index_type"),
-        "index_params": _normalize_mapping(index_params, "index_params"),
+        "index_params": _normalize_mapping(
+            index_params,
+            "index_params",
+            reject_physical_keys=True,
+        ),
     }
     assert_no_secret_keys(components)
     return components
@@ -325,14 +377,31 @@ def retrieval_run_fingerprint_components(
             milvus_collection_fingerprint,
             "milvus_collection_fingerprint",
         ),
-        "query_source": _normalize_optional_mapping(query_source, "query_source"),
+        "query_source": _normalize_optional_mapping(
+            query_source,
+            "query_source",
+            reject_physical_keys=True,
+        ),
         "query_embedding": _normalize_optional_mapping(
             query_embedding,
             "query_embedding",
+            reject_physical_keys=True,
         ),
-        "search_params": _normalize_mapping(search_params, "search_params"),
-        "rewrite": _normalize_optional_mapping(rewrite, "rewrite"),
-        "rerank": _normalize_optional_mapping(rerank, "rerank"),
+        "search_params": _normalize_mapping(
+            search_params,
+            "search_params",
+            reject_physical_keys=True,
+        ),
+        "rewrite": _normalize_optional_mapping(
+            rewrite,
+            "rewrite",
+            reject_physical_keys=True,
+        ),
+        "rerank": _normalize_optional_mapping(
+            rerank,
+            "rerank",
+            reject_physical_keys=True,
+        ),
         "trace_mode": _require_non_empty(trace_mode, "trace_mode"),
     }
     assert_no_secret_keys(components)
@@ -365,7 +434,11 @@ def metrics_run_fingerprint_components(
             metrics_entrypoint,
             "metrics_entrypoint",
         ),
-        "metric_params": _normalize_mapping(metric_params, "metric_params"),
+        "metric_params": _normalize_mapping(
+            metric_params,
+            "metric_params",
+            reject_physical_keys=True,
+        ),
     }
     assert_no_secret_keys(components)
     return components
@@ -396,15 +469,28 @@ def _require_positive_int(value: int, field_name: str) -> int:
 def _normalize_optional_mapping(
     payload: Mapping[str, Any] | None,
     field_name: str,
+    *,
+    reject_physical_keys: bool = False,
 ) -> dict[str, Any] | None:
     if payload is None:
         return None
-    return _normalize_mapping(payload, field_name)
+    return _normalize_mapping(
+        payload,
+        field_name,
+        reject_physical_keys=reject_physical_keys,
+    )
 
 
-def _normalize_mapping(payload: Mapping[str, Any], field_name: str) -> dict[str, Any]:
+def _normalize_mapping(
+    payload: Mapping[str, Any],
+    field_name: str,
+    *,
+    reject_physical_keys: bool = False,
+) -> dict[str, Any]:
     assert_no_secret_keys(payload)
     _assert_no_operational_identity_keys(payload, path=field_name)
+    if reject_physical_keys:
+        _assert_no_physical_resource_keys(payload, path=field_name)
     normalized = _normalize_json_value(payload, field_name)
     if not isinstance(normalized, dict):
         raise AssetFingerprintError(f"{field_name} must be a JSON object")
@@ -414,15 +500,50 @@ def _normalize_mapping(payload: Mapping[str, Any], field_name: str) -> dict[str,
 def _normalize_optional_mapping_sequence(
     values: Sequence[Mapping[str, Any]] | None,
     field_name: str,
+    *,
+    reject_physical_keys: bool = False,
 ) -> list[dict[str, Any]] | None:
     if values is None:
         return None
-    if isinstance(values, (str, bytes)):
+    if isinstance(values, (str, bytes, bytearray)):
         raise AssetFingerprintError(f"{field_name} must be a sequence of mappings")
     return [
-        _normalize_mapping(value, f"{field_name}[{index}]")
+        _normalize_mapping(
+            value,
+            f"{field_name}[{index}]",
+            reject_physical_keys=reject_physical_keys,
+        )
         for index, value in enumerate(values)
     ]
+
+
+def _normalize_file_fingerprints(
+    values: Sequence[Mapping[str, Any]] | None,
+    field_name: str,
+) -> list[dict[str, Any]] | None:
+    normalized = _normalize_optional_mapping_sequence(values, field_name)
+    if normalized is None:
+        return None
+    return sorted(normalized, key=_file_fingerprint_sort_key)
+
+
+def _file_fingerprint_sort_key(value: Mapping[str, Any]) -> tuple[str, str, str, str]:
+    return (
+        _canonical_sort_value(value.get("path")),
+        _canonical_sort_value(value.get("sha256")),
+        _canonical_sort_value(value.get("size_bytes")),
+        _canonical_sort_value(value),
+    )
+
+
+def _canonical_sort_value(value: Any) -> str:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
 
 
 def _assert_no_secret_keys(value: Any, path: str) -> None:
@@ -453,6 +574,29 @@ def _assert_no_operational_identity_keys(value: Any, path: str) -> None:
     elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         for index, child in enumerate(value):
             _assert_no_operational_identity_keys(child, f"{path}[{index}]")
+
+
+def _assert_no_physical_resource_keys(value: Any, path: str) -> None:
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            key_path = f"{path}.{key}"
+            if isinstance(key, str) and _is_physical_resource_key(key):
+                raise AssetFingerprintError(
+                    f"Asset fingerprint payload contains physical resource key: {key_path}"
+                )
+            _assert_no_physical_resource_keys(child, key_path)
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        for index, child in enumerate(value):
+            _assert_no_physical_resource_keys(child, f"{path}[{index}]")
+
+
+def _is_physical_resource_key(key: str) -> bool:
+    key_lower = key.lower()
+    if key_lower in STABLE_RESOURCE_IDENTITY_KEYS:
+        return False
+    return key_lower in PHYSICAL_RESOURCE_KEYS or key_lower.endswith(
+        PHYSICAL_RESOURCE_KEY_SUFFIXES
+    )
 
 
 def _normalize_json_value(value: Any, path: str) -> Any:

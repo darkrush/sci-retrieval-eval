@@ -152,22 +152,32 @@ sha256。它必须排除：
 
 - `run_id`
 - `artifact_id`
-- `created_at` / timestamp
+- `created_at` / `updated_at` / `started_at` / `completed_at` / timestamp 等时间字段
 - `created_by`
 - API key、access key、token、password、Authorization header 等 secrets
+- ES index name、Milvus collection name 等物理资源名
+- 真实服务地址或连接字段，例如 `endpoint_url`、`url`、`uri`、`host`、`port`
+- request id、trace file/path 等运行实例输出
 
 它可以包含：
 
 - artifact type
 - 上游资产 fingerprint
-- dataset name、raw source、raw file fingerprints
+- dataset name、`raw_source_uri`、raw file fingerprints
 - normalizer name / version / params
-- chunker source / name / Git remote / commit / entrypoint / params / schema version
+- chunker source / name / `source_git_remote_url` / commit / entrypoint / params / schema version
 - embedding source / model / revision / endpoint alias / dim / call params / normalized / storage type
 - Elasticsearch builder provenance / mapping / settings / ingest params
 - Milvus builder provenance / schema / metric / index type / index params
 - retrieval query source / query embedding / search params / rewrite / rerank / trace mode
 - metrics source / code commit / entrypoint / metric params
+
+`raw_source_uri` 和 `source_git_remote_url` 是稳定内容 / 源码身份字段，不等同于真实服务
+连接地址。自由参数字典如 `builder_params`、`ingest_params`、`search_params`、
+`query_embedding`、`rewrite`、`rerank`、`call_params` 不应携带 `index_name`、
+`collection_name`、真实 endpoint URL、host/port、request id 或 trace path。
+`file_fingerprints` 按 canonical order 计算，表达文件集合语义，不受对象存储 listing
+顺序影响。
 
 后续 planner 判断复用时，至少需要同时满足：
 
