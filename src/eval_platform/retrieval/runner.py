@@ -19,8 +19,8 @@ from eval_platform.datasets import (
     read_normalized_dataset_artifact,
 )
 from eval_platform.defaults import (
-    DEFAULT_PAPER_CAP,
     DEFAULT_HYBRID_PER_SOURCE_TOPK,
+    DEFAULT_PAPER_CAP,
     DEFAULT_RERANK_CANDIDATE_CAP,
     DEFAULT_RERANK_CROSS_PATH_TOPK,
     DEFAULT_RETRIEVAL_TOP_K,
@@ -340,11 +340,14 @@ def _retrieve_one_query(
         candidates = dedupe_sequential(hit_lists, max_total=250)
         trace["fused_hits"] = hits_trace(candidates)
 
-    capped_candidates = limit_hits_per_paper(
-        candidates,
-        paper_cap=config.paper_cap,
-        max_total=config.rrf_path_topk if config.retrieval_mode == "hybrid" else config.top_k,
-    )
+    if config.retrieval_mode == "hybrid":
+        capped_candidates = limit_hits_per_paper(
+            candidates,
+            paper_cap=config.paper_cap,
+            max_total=config.rrf_path_topk,
+        )
+    else:
+        capped_candidates = candidates
     trace["paper_capped_hits"] = hits_trace(capped_candidates)
     final_hits = maybe_rerank(query_text, capped_candidates, config, rerank_client, trace)
     ranked_hits = rank_hits(final_hits[: config.top_k])

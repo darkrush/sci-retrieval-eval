@@ -59,11 +59,6 @@ def recall_one(
 
     es_top_k = max(config.hybrid_per_source_topk, config.rrf_path_topk)
     es_hits = es_client.search_bm25(config.index_name, query, es_top_k)
-    # Keep a long enough RRF list so downstream paper_cap can backfill to rrf_path_topk.
-    fused_out_top_k = max(
-        config.rrf_path_topk,
-        len(enriched_milvus_hits) + len(es_hits),
-    )
-    fused_hits = rrf_fuse(enriched_milvus_hits, es_hits, fused_out_top_k)
+    fused_hits = rrf_fuse(enriched_milvus_hits, es_hits, config.rrf_path_topk)
     enriched_fused_hits = es_client.enrich_by_chunk_ids(config.index_name, fused_hits)
     return enriched_fused_hits, es_hits, milvus_hits, enriched_fused_hits

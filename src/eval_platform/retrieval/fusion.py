@@ -86,10 +86,10 @@ def limit_hits_per_paper(
 ) -> list[RetrievalHit]:
     """Keep ranked hits while capping max chunks per paper/doc id."""
 
+    if paper_cap <= 0:
+        return list(hits)
     if max_total <= 0:
         return []
-    if paper_cap <= 0:
-        return hits[:max_total]
 
     out: list[RetrievalHit] = []
     counts: defaultdict[str, int] = defaultdict(int)

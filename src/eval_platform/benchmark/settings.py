@@ -8,8 +8,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from eval_platform.defaults import (
-    DEFAULT_PAPER_CAP,
     DEFAULT_HYBRID_PER_SOURCE_TOPK,
+    DEFAULT_PAPER_CAP,
     DEFAULT_RERANK_CANDIDATE_CAP,
     DEFAULT_RERANK_CROSS_PATH_TOPK,
     DEFAULT_RETRIEVAL_TOP_K,
