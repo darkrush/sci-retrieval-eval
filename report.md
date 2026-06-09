@@ -8,7 +8,8 @@
 - 当前分支：`refactor/recall-inf-analysis-helper`
 - 基线：`origin/main` / `2d79fcc Fix IFIR effective query policy (#51)`
 - 完成时间：2026-06-09
-- 最终 commit SHA：提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA
+- 实现提交 SHA：`8f950d8 Move recall inf diagnostics to analysis`
+- 报告校正提交 SHA：本报告校正提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA
 
 ## 2. 本轮改动摘要
 
