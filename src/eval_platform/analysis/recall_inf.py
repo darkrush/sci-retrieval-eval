@@ -11,6 +11,10 @@ from eval_platform.datasets import read_normalized_dataset_artifact
 from eval_platform.retrieval import RESULTS_DIR
 
 
+class RecallInfAnalysisError(Exception):
+    """Raised when recall@inf analysis cannot consume required artifacts."""
+
+
 def compute_recall_inf_metrics(
     store: ArtifactStore,
     *,
@@ -70,7 +74,10 @@ def _stream_retrieval_doc_ids(
     """
 
     if not store.is_complete(RETRIEVAL_RUN_ARTIFACT_TYPE, retrieval_run_artifact_id):
-        return {}
+        raise RecallInfAnalysisError(
+            "retrieval_run artifact is not complete: "
+            f"artifact_id={retrieval_run_artifact_id!r}"
+        )
 
     manifest = store.read_manifest(RETRIEVAL_RUN_ARTIFACT_TYPE, retrieval_run_artifact_id)
     result: dict[str, tuple[set[str], set[str], set[str]]] = {}

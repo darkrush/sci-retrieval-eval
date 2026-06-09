@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from eval_platform.analysis.recall_inf import (
+    RecallInfAnalysisError,
     _mean,
     _recall_inf,
     _record_doc_ids,
@@ -14,7 +16,7 @@ from eval_platform.analysis.recall_inf import (
     _trace_hit_doc_id,
     compute_recall_inf_metrics,
 )
-from eval_platform.artifacts import LocalArtifactStore
+from eval_platform.artifacts import ArtifactManifest, LocalArtifactStore
 from eval_platform.datasets import (
     CorpusRecord,
     NormalizedDataset,
@@ -22,7 +24,33 @@ from eval_platform.datasets import (
     QueryRecord,
     write_normalized_dataset_artifact,
 )
-from eval_platform.retrieval import RetrievalHit, RetrievalQueryResult, write_retrieval_run_artifact
+from eval_platform.retrieval import (
+    RETRIEVAL_RUN_ARTIFACT_TYPE,
+    RetrievalHit,
+    RetrievalQueryResult,
+    write_retrieval_run_artifact,
+)
+
+
+def _write_complete_normalized_dataset(
+    store: LocalArtifactStore,
+    artifact_id: str,
+) -> None:
+    write_normalized_dataset_artifact(
+        store,
+        artifact_id,
+        NormalizedDataset(
+            corpus=[CorpusRecord(doc_id="d1", text="t1")],
+            queries=[QueryRecord(query_id="q1", text="q")],
+            qrels=[QrelRecord(query_id="q1", doc_id="d1", relevance=1.0)],
+        ),
+        metadata={
+            "raw_dataset_asset_fingerprint_sha256": "fp",
+            "normalizer_name": "test",
+            "normalizer_version": "1",
+            "normalized_schema_version": "1",
+        },
+    )
 
 
 class TestTraceHitDocId:
@@ -364,6 +392,52 @@ class TestComputeRecallInfMetrics:
                 store,
                 source_normalized_dataset_artifact_id="nonexistent",
                 retrieval_run_artifact_id="nonexistent",
+            )
+
+    def test_raises_when_retrieval_artifact_missing(self, tmp_path: Path) -> None:
+        store = LocalArtifactStore(tmp_path)
+        normalized_id = "norm-complete"
+
+        _write_complete_normalized_dataset(store, normalized_id)
+
+        with pytest.raises(
+            RecallInfAnalysisError,
+            match="retrieval_run artifact is not complete: artifact_id='missing-ret'",
+        ):
+            compute_recall_inf_metrics(
+                store,
+                source_normalized_dataset_artifact_id=normalized_id,
+                retrieval_run_artifact_id="missing-ret",
+            )
+
+    def test_raises_when_retrieval_manifest_exists_but_incomplete(
+        self, tmp_path: Path
+    ) -> None:
+        store = LocalArtifactStore(tmp_path)
+        normalized_id = "norm-complete"
+        retrieval_id = "ret-incomplete"
+
+        _write_complete_normalized_dataset(store, normalized_id)
+        store.write_manifest(
+            RETRIEVAL_RUN_ARTIFACT_TYPE,
+            retrieval_id,
+            ArtifactManifest(
+                artifact_id=retrieval_id,
+                artifact_type=RETRIEVAL_RUN_ARTIFACT_TYPE,
+                created_at=datetime(2026, 6, 9, tzinfo=UTC),
+                files=[],
+            ),
+        )
+
+        assert store.is_complete(RETRIEVAL_RUN_ARTIFACT_TYPE, retrieval_id) is False
+        with pytest.raises(
+            RecallInfAnalysisError,
+            match="retrieval_run artifact is not complete: artifact_id='ret-incomplete'",
+        ):
+            compute_recall_inf_metrics(
+                store,
+                source_normalized_dataset_artifact_id=normalized_id,
+                retrieval_run_artifact_id=retrieval_id,
             )
 
     def test_handles_error_queries(self, tmp_path: Path) -> None:
