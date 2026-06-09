@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 from typing import Any
 
@@ -10,6 +11,7 @@ from eval_platform.artifacts.metadata_keys import (
     METADATA_KEY_ASSET_FINGERPRINT_SHA256,
     METADATA_KEY_CHUNKED_CORPUS_ARTIFACT_ID,
     METADATA_KEY_COLLECTION_NAME,
+    METADATA_KEY_CORPUS_FINGERPRINT_SHA256,
     METADATA_KEY_EMBEDDINGS_ARTIFACT_ID,
     METADATA_KEY_INDEX_NAME,
     METADATA_KEY_RAW_DATASET_ARTIFACT_ID,
@@ -18,6 +20,7 @@ from eval_platform.artifacts.metadata_keys import (
     METADATA_KEY_SOURCE_NORMALIZED_DATASET_ARTIFACT_ID,
 )
 from eval_platform.artifacts.store import SUCCESS_MARKER
+from eval_platform.artifacts.types import NORMALIZED_DATASET_ARTIFACT_TYPE
 from eval_platform.corpus_assets.naming import (
     ARTIFACT_STAGE_ORDER,
     raw_prefix_key,
@@ -25,6 +28,7 @@ from eval_platform.corpus_assets.naming import (
 )
 from eval_platform.corpus_assets.registry import TARGET_DATASETS, DatasetSpec
 from eval_platform.corpus_assets.s3 import raw_prefix_exists, redact_sensitive_values
+from eval_platform.datasets.normalized import CORPUS_FILENAME
 
 _MANIFEST_SUMMARY_KEYS = {
     "dataset",
@@ -41,6 +45,7 @@ _MANIFEST_SUMMARY_KEYS = {
     "unique_doc_count",
     "embedding_dim",
     METADATA_KEY_ASSET_FINGERPRINT_SHA256,
+    METADATA_KEY_CORPUS_FINGERPRINT_SHA256,
     "source_artifact_id",
     METADATA_KEY_RAW_DATASET_ARTIFACT_ID,
     METADATA_KEY_SOURCE_NORMALIZED_DATASET_ARTIFACT_ID,
@@ -70,6 +75,27 @@ def _manifest_metadata_summary(manifest: ArtifactManifest) -> dict[str, Any]:
             for dependency in manifest.dependencies
         ]
     return redact_sensitive_values(summary)
+
+
+def _add_derived_corpus_fingerprint(
+    metadata_summary: dict[str, Any],
+    *,
+    store: ArtifactStore,
+    manifest: ArtifactManifest,
+) -> None:
+    if METADATA_KEY_CORPUS_FINGERPRINT_SHA256 in metadata_summary:
+        return
+    try:
+        corpus_bytes = store.get_file(
+            NORMALIZED_DATASET_ARTIFACT_TYPE,
+            manifest.artifact_id,
+            CORPUS_FILENAME,
+        )
+    except Exception:
+        return
+    metadata_summary[METADATA_KEY_CORPUS_FINGERPRINT_SHA256] = hashlib.sha256(
+        corpus_bytes
+    ).hexdigest()
 
 
 def _manifest_dataset_match(manifest: ArtifactManifest, spec: DatasetSpec) -> bool:
@@ -128,6 +154,13 @@ def inventory_corpus_assets(
                 if not _manifest_dataset_match(manifest, spec):
                     continue
                 complete = store.is_complete(artifact_type, manifest.artifact_id)
+                metadata_summary = _manifest_metadata_summary(manifest)
+                if artifact_type == NORMALIZED_DATASET_ARTIFACT_TYPE and complete:
+                    _add_derived_corpus_fingerprint(
+                        metadata_summary,
+                        store=store,
+                        manifest=manifest,
+                    )
                 records.append(
                     {
                         "artifact_id": manifest.artifact_id,
@@ -145,7 +178,7 @@ def inventory_corpus_assets(
                             artifact_type,
                             manifest.artifact_id,
                         ),
-                        "metadata_summary": _manifest_metadata_summary(manifest),
+                        "metadata_summary": metadata_summary,
                     }
                 )
             artifacts_by_type[artifact_type] = sorted(

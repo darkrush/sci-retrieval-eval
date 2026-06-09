@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Execute the IFIRNFCorpus corpus asset chain from real S3 raw data.
+"""Execute a narrow IFIR corpus asset chain from real S3 raw data.
 
-This script is intentionally narrow: it only supports IFIRNFCorpus so the
-Phase 3 smoke test can build the corrected IFIR assets without turning the
+This script is intentionally narrow: it only supports IFIR datasets so smoke
+tests can build corrected effective-query assets without turning the
 five-dataset planner into a broad execution framework.
 """
 
@@ -80,7 +80,8 @@ from eval_platform.indexes import (  # noqa: E402
     run_milvus_ingest,
 )
 
-IFIR_NFCORPUS_TASK_NAME = "IFIRNFCorpus"
+DEFAULT_IFIR_TASK_NAME = "IFIRNFCorpus"
+SUPPORTED_IFIR_TASK_NAMES = frozenset({"IFIRNFCorpus", "IFIRScifact"})
 IFIR_QUERY_TEXT_POLICY = "mteb_text_plus_instruction"
 
 
@@ -94,7 +95,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--s3-prefix", required=True)
     parser.add_argument("--raw-prefix", default="sciverse_benchmark/raw")
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--dataset", default=IFIR_NFCORPUS_TASK_NAME)
+    parser.add_argument("--dataset", default=DEFAULT_IFIR_TASK_NAME)
     parser.add_argument("--reuse-existing", action="store_true")
     parser.add_argument("--yes", action="store_true", help="Confirm real writes")
     parser.add_argument("--output", type=Path, default=None)
@@ -108,6 +109,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         raise IFIRCorpusAssetExecuteError("config.s3.bucket is required")
 
     spec = dataset_specs_for_selection(args.dataset)[0]
+    task_name = spec.task_name
     store = make_s3_artifact_store(
         config=config,
         s3_prefix=args.s3_prefix,
@@ -143,7 +145,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     )
     output_payload(
         {
-            "kind": "ifir_nfcorpus_corpus_asset_execute_plan",
+            "kind": "ifir_corpus_asset_execute_plan",
             "execute": bool(args.yes),
             "plan": plan,
         },
@@ -161,13 +163,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         raw_client=client,
         store=store,
         plan=plan,
+        task_name=task_name,
+        dataset_slug=spec.slug,
         raw_prefix=args.raw_prefix,
         run_id=args.run_id,
         code_git_sha=code_git_sha,
         progress_reporter=progress,
     )
     summary = {
-        "kind": "ifir_nfcorpus_corpus_asset_execute_result",
+        "kind": "ifir_corpus_asset_execute_result",
+        "dataset": task_name,
         "run_id": args.run_id,
         "s3_prefix": args.s3_prefix,
         "stage_results": stage_results,
@@ -177,9 +182,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _validate_args(args: argparse.Namespace) -> None:
-    if args.dataset != IFIR_NFCORPUS_TASK_NAME:
+    if args.dataset not in SUPPORTED_IFIR_TASK_NAMES:
         raise IFIRCorpusAssetExecuteError(
-            f"Only {IFIR_NFCORPUS_TASK_NAME} is supported, got {args.dataset!r}"
+            "Only IFIRNFCorpus and IFIRScifact are supported, "
+            f"got {args.dataset!r}"
         )
     if not str(args.s3_prefix).strip():
         raise IFIRCorpusAssetExecuteError("--s3-prefix must not be empty")
@@ -200,31 +206,33 @@ def _execute_plan(
     raw_client: Any,
     store: Any,
     plan: dict[str, Any],
+    task_name: str,
+    dataset_slug: str,
     raw_prefix: str,
     run_id: str,
     code_git_sha: str,
     progress_reporter: ProgressReporter,
 ) -> list[dict[str, Any]]:
-    dataset_plan = plan["datasets"][IFIR_NFCORPUS_TASK_NAME]
+    dataset_plan = plan["datasets"][task_name]
     steps = dataset_plan["steps"]
     step_by_type = {step["artifact_type"]: step for step in steps}
     stage_results: list[dict[str, Any]] = []
 
     raw_step = step_by_type[RAW_DATASET_ARTIFACT_TYPE]
     if raw_step["action"] == "create":
-        spec = dataset_specs_for_selection(IFIR_NFCORPUS_TASK_NAME)[0]
+        spec = dataset_specs_for_selection(task_name)[0]
         raw_manifest = import_raw_dataset_from_s3_prefix(
             store,
             raw_step["artifact_id"],
             client=raw_client,
             bucket=config.s3.bucket or "",
             prefix=raw_prefix_key(raw_prefix, spec),
-            dataset_name=IFIR_NFCORPUS_TASK_NAME,
+            dataset_name=task_name,
             source_uri=raw_step["raw_source_uri"],
             import_parameters={"raw_format": "jsonl_tsv", "split": "test"},
             created_by="validator",
             code_git_sha=code_git_sha,
-            metadata={"dataset_slug": "ifir_nfcorpus", "task_name": IFIR_NFCORPUS_TASK_NAME},
+            metadata={"dataset_slug": dataset_slug, "task_name": task_name},
         )
         stage_results.append(_manifest_result("raw_import", raw_manifest))
     else:
@@ -239,11 +247,11 @@ def _execute_plan(
             RawToNormalizedConfig(
                 source_artifact_id=normalized_step["source_artifact_id"],
                 output_artifact_id=normalized_step["artifact_id"],
-                dataset_name=IFIR_NFCORPUS_TASK_NAME,
+                dataset_name=task_name,
                 split="test",
                 created_by="validator",
                 code_git_sha=code_git_sha,
-                metadata={"dataset_slug": "ifir_nfcorpus"},
+                metadata={"dataset_slug": dataset_slug},
             ),
             opener=S3RawFileOpener(raw_client),
             progress_reporter=progress_reporter,
@@ -262,6 +270,8 @@ def _execute_plan(
             source_artifact_id=chunks_step["source_artifact_id"],
             output_artifact_id=chunks_step["artifact_id"],
             code_git_sha=code_git_sha,
+            task_name=task_name,
+            dataset_slug=dataset_slug,
             progress_reporter=progress_reporter,
         )
         stage_results.append(_manifest_result("chunking", chunk_manifest))
@@ -277,6 +287,8 @@ def _execute_plan(
             source_artifact_id=embedding_step["source_artifact_id"],
             output_artifact_id=embedding_step["artifact_id"],
             code_git_sha=code_git_sha,
+            task_name=task_name,
+            dataset_slug=dataset_slug,
             progress_reporter=progress_reporter,
         )
         stage_results.append(_manifest_result("embedding", embedding_manifest))
@@ -296,7 +308,7 @@ def _execute_plan(
                 overwrite_existing=True,
                 created_by="validator",
                 code_git_sha=code_git_sha,
-                metadata={"dataset_slug": "ifir_nfcorpus", "task_name": IFIR_NFCORPUS_TASK_NAME},
+                metadata={"dataset_slug": dataset_slug, "task_name": task_name},
             ),
             _make_es_client(config),
             progress_reporter=progress_reporter,
@@ -327,7 +339,7 @@ def _execute_plan(
                 },
                 created_by="validator",
                 code_git_sha=code_git_sha,
-                metadata={"dataset_slug": "ifir_nfcorpus", "task_name": IFIR_NFCORPUS_TASK_NAME},
+                metadata={"dataset_slug": dataset_slug, "task_name": task_name},
             ),
             _make_milvus_client(config),
             progress_reporter=progress_reporter,
@@ -342,7 +354,9 @@ def _execute_plan(
 
 
 def _preflight_create_stages(config: PlatformConfig, plan: dict[str, Any]) -> None:
-    dataset_plan = plan["datasets"][IFIR_NFCORPUS_TASK_NAME]
+    if len(plan["datasets"]) != 1:
+        raise IFIRCorpusAssetExecuteError("executor plan must contain exactly one dataset")
+    dataset_plan = next(iter(plan["datasets"].values()))
     create_stages = {
         step["artifact_type"]
         for step in dataset_plan["steps"]
@@ -385,6 +399,8 @@ def _run_sciverse_chunking(
     source_artifact_id: str,
     output_artifact_id: str,
     code_git_sha: str,
+    task_name: str,
+    dataset_slug: str,
     progress_reporter: ProgressReporter,
 ) -> Any:
     chunking = config.chunking
@@ -424,7 +440,7 @@ def _run_sciverse_chunking(
             chunk_params=final_chunk_params,
             created_by="validator",
             code_git_sha=code_git_sha,
-            metadata={"dataset_slug": "ifir_nfcorpus", "task_name": IFIR_NFCORPUS_TASK_NAME},
+            metadata={"dataset_slug": dataset_slug, "task_name": task_name},
         ),
         SciverseAdminIngestExternalChunker(chunker_config),
         progress_reporter=progress_reporter,
@@ -438,6 +454,8 @@ def _run_embedding(
     source_artifact_id: str,
     output_artifact_id: str,
     code_git_sha: str,
+    task_name: str,
+    dataset_slug: str,
     progress_reporter: ProgressReporter,
 ) -> Any:
     endpoints = _selected_embedding_endpoint_configs(config)
@@ -470,7 +488,7 @@ def _run_embedding(
             consistency_check=consistency,
             created_by="validator",
             code_git_sha=code_git_sha,
-            metadata={"dataset_slug": "ifir_nfcorpus", "task_name": IFIR_NFCORPUS_TASK_NAME},
+            metadata={"dataset_slug": dataset_slug, "task_name": task_name},
         ),
         clients[0],
         progress_reporter=progress_reporter,

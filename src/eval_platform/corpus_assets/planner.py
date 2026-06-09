@@ -9,6 +9,7 @@ from eval_platform.artifacts.metadata_keys import (
     METADATA_KEY_ASSET_FINGERPRINT_SHA256,
     METADATA_KEY_CHUNKED_CORPUS_ARTIFACT_ID,
     METADATA_KEY_COLLECTION_NAME,
+    METADATA_KEY_CORPUS_FINGERPRINT_SHA256,
     METADATA_KEY_EMBEDDINGS_ARTIFACT_ID,
     METADATA_KEY_INDEX_NAME,
 )
@@ -62,7 +63,7 @@ def build_plan_for_datasets(
         )
         records_by_id = _records_by_id(complete_records)
         reuse_artifact_ids = (
-            _resolve_reusable_artifact_chain(records_by_id)
+            _resolve_reusable_artifact_chain(records_by_id, expected_asset_fingerprints)
             if reuse_existing and inventory is not None
             else {}
         )
@@ -101,6 +102,27 @@ def build_plan_for_datasets(
                 asset_fingerprint = _record_asset_fingerprint_sha256(reused_record)
                 if asset_fingerprint is not None:
                     step[METADATA_KEY_ASSET_FINGERPRINT_SHA256] = asset_fingerprint
+            if (
+                artifact_type == NORMALIZED_DATASET_ARTIFACT_TYPE
+                and reused_record is not None
+            ):
+                _set_source_artifact_id(
+                    step,
+                    reused_record,
+                    RAW_DATASET_ARTIFACT_TYPE,
+                )
+            if artifact_type == CHUNKED_CORPUS_ARTIFACT_TYPE and reused_record is not None:
+                _set_source_artifact_id(
+                    step,
+                    reused_record,
+                    NORMALIZED_DATASET_ARTIFACT_TYPE,
+                )
+            if artifact_type == EMBEDDINGS_ARTIFACT_TYPE and reused_record is not None:
+                _set_source_artifact_id(
+                    step,
+                    reused_record,
+                    CHUNKED_CORPUS_ARTIFACT_TYPE,
+                )
             if artifact_type == RAW_DATASET_ARTIFACT_TYPE:
                 step["raw_source_uri"] = raw_prefix_uri(bucket, raw_prefix, spec)
             if artifact_type == ELASTICSEARCH_INDEX_ARTIFACT_TYPE:
@@ -233,7 +255,7 @@ def _filter_records_by_expected_asset_fingerprints(
     filtered: dict[str, list[dict[str, Any]]] = {}
     for artifact_type, records in records_by_type.items():
         expected = expected_asset_fingerprints.get(artifact_type)
-        if expected is None:
+        if expected is None or artifact_type == NORMALIZED_DATASET_ARTIFACT_TYPE:
             filtered[artifact_type] = records
             continue
         filtered[artifact_type] = [
@@ -254,9 +276,11 @@ def _record_asset_fingerprint_sha256(record: dict[str, Any]) -> str | None:
 
 def _resolve_reusable_artifact_chain(
     records_by_id: dict[str, dict[str, dict[str, Any]]],
+    expected_asset_fingerprints: dict[str, str],
 ) -> dict[str, str]:
     """Resolve one dependency-consistent reusable artifact chain."""
 
+    fallback: dict[str, str] | None = None
     for record in records_by_id.get(MILVUS_COLLECTION_ARTIFACT_TYPE, {}).values():
         chain = _trace_milvus_chain(records_by_id, str(record["artifact_id"]))
         if chain is None:
@@ -269,8 +293,20 @@ def _resolve_reusable_artifact_chain(
         )
         if matching_es_id is not None:
             chain[ELASTICSEARCH_INDEX_ARTIFACT_TYPE] = matching_es_id
-        return chain
+        trimmed = _trim_chain_for_expected_normalized(
+            records_by_id,
+            chain,
+            expected_asset_fingerprints,
+        )
+        if MILVUS_COLLECTION_ARTIFACT_TYPE in trimmed:
+            if NORMALIZED_DATASET_ARTIFACT_TYPE in trimmed:
+                return trimmed
+            if fallback is None:
+                fallback = trimmed
+    if fallback is not None:
+        return fallback
 
+    fallback = None
     for record in records_by_id.get(ELASTICSEARCH_INDEX_ARTIFACT_TYPE, {}).values():
         chain = _trace_elasticsearch_chain(records_by_id, str(record["artifact_id"]))
         if chain is None:
@@ -290,27 +326,154 @@ def _resolve_reusable_artifact_chain(
             )
             if matching_milvus_id is not None:
                 chain[MILVUS_COLLECTION_ARTIFACT_TYPE] = matching_milvus_id
-        return chain
+        trimmed = _trim_chain_for_expected_normalized(
+            records_by_id,
+            chain,
+            expected_asset_fingerprints,
+        )
+        if ELASTICSEARCH_INDEX_ARTIFACT_TYPE in trimmed:
+            if NORMALIZED_DATASET_ARTIFACT_TYPE in trimmed:
+                return trimmed
+            if fallback is None:
+                fallback = trimmed
+    if fallback is not None:
+        return fallback
 
+    fallback = None
     for record in records_by_id.get(EMBEDDINGS_ARTIFACT_TYPE, {}).values():
         chain = _trace_embedding_chain(records_by_id, str(record["artifact_id"]))
         if chain is not None:
-            return chain
+            trimmed = _trim_chain_for_expected_normalized(
+                records_by_id,
+                chain,
+                expected_asset_fingerprints,
+            )
+            if EMBEDDINGS_ARTIFACT_TYPE in trimmed:
+                if NORMALIZED_DATASET_ARTIFACT_TYPE in trimmed:
+                    return trimmed
+                if fallback is None:
+                    fallback = trimmed
+    if fallback is not None:
+        return fallback
 
+    fallback = None
     for record in records_by_id.get(CHUNKED_CORPUS_ARTIFACT_TYPE, {}).values():
         chain = _trace_chunked_chain(records_by_id, str(record["artifact_id"]))
         if chain is not None:
-            return chain
+            trimmed = _trim_chain_for_expected_normalized(
+                records_by_id,
+                chain,
+                expected_asset_fingerprints,
+            )
+            if CHUNKED_CORPUS_ARTIFACT_TYPE in trimmed:
+                if NORMALIZED_DATASET_ARTIFACT_TYPE in trimmed:
+                    return trimmed
+                if fallback is None:
+                    fallback = trimmed
+    if fallback is not None:
+        return fallback
 
     for record in records_by_id.get(NORMALIZED_DATASET_ARTIFACT_TYPE, {}).values():
         chain = _trace_normalized_chain(records_by_id, str(record["artifact_id"]))
         if chain is not None:
-            return chain
+            trimmed = _trim_chain_for_expected_normalized(
+                records_by_id,
+                chain,
+                expected_asset_fingerprints,
+            )
+            if NORMALIZED_DATASET_ARTIFACT_TYPE in trimmed:
+                return trimmed
 
     for record in records_by_id.get(RAW_DATASET_ARTIFACT_TYPE, {}).values():
         return {RAW_DATASET_ARTIFACT_TYPE: str(record["artifact_id"])}
 
     return {}
+
+
+def _trim_chain_for_expected_normalized(
+    records_by_id: dict[str, dict[str, dict[str, Any]]],
+    chain: dict[str, str],
+    expected_asset_fingerprints: dict[str, str],
+) -> dict[str, str]:
+    expected_normalized_fingerprint = expected_asset_fingerprints.get(
+        NORMALIZED_DATASET_ARTIFACT_TYPE
+    )
+    if expected_normalized_fingerprint is None:
+        return chain
+
+    normalized_id = chain.get(NORMALIZED_DATASET_ARTIFACT_TYPE)
+    if normalized_id is None:
+        return chain
+    normalized_record = records_by_id.get(NORMALIZED_DATASET_ARTIFACT_TYPE, {}).get(
+        normalized_id
+    )
+    if normalized_record is None:
+        return chain
+    if _record_asset_fingerprint_sha256(normalized_record) == expected_normalized_fingerprint:
+        return chain
+
+    if not _chain_has_downstream_corpus_assets(chain):
+        return _raw_only_chain(chain)
+
+    expected_corpus_fingerprint = _expected_normalized_corpus_fingerprint(
+        records_by_id,
+        expected_asset_fingerprints,
+    )
+    source_corpus_fingerprint = _record_corpus_fingerprint_sha256(normalized_record)
+    if (
+        source_corpus_fingerprint is None
+        or expected_corpus_fingerprint is None
+        or source_corpus_fingerprint != expected_corpus_fingerprint
+    ):
+        return _raw_only_chain(chain)
+
+    trimmed = dict(chain)
+    trimmed.pop(NORMALIZED_DATASET_ARTIFACT_TYPE, None)
+    return trimmed
+
+
+def _chain_has_downstream_corpus_assets(chain: dict[str, str]) -> bool:
+    return any(
+        artifact_type in chain
+        for artifact_type in (
+            CHUNKED_CORPUS_ARTIFACT_TYPE,
+            EMBEDDINGS_ARTIFACT_TYPE,
+            ELASTICSEARCH_INDEX_ARTIFACT_TYPE,
+            MILVUS_COLLECTION_ARTIFACT_TYPE,
+        )
+    )
+
+
+def _raw_only_chain(chain: dict[str, str]) -> dict[str, str]:
+    raw_id = chain.get(RAW_DATASET_ARTIFACT_TYPE)
+    return {RAW_DATASET_ARTIFACT_TYPE: raw_id} if raw_id is not None else {}
+
+
+def _expected_normalized_corpus_fingerprint(
+    records_by_id: dict[str, dict[str, dict[str, Any]]],
+    expected_asset_fingerprints: dict[str, str],
+) -> str | None:
+    explicit = expected_asset_fingerprints.get(METADATA_KEY_CORPUS_FINGERPRINT_SHA256)
+    if explicit is not None and explicit.strip():
+        return explicit
+
+    expected_normalized_fingerprint = expected_asset_fingerprints.get(
+        NORMALIZED_DATASET_ARTIFACT_TYPE
+    )
+    if expected_normalized_fingerprint is None:
+        return None
+    for record in records_by_id.get(NORMALIZED_DATASET_ARTIFACT_TYPE, {}).values():
+        if _record_asset_fingerprint_sha256(record) == expected_normalized_fingerprint:
+            return _record_corpus_fingerprint_sha256(record)
+    return None
+
+
+def _record_corpus_fingerprint_sha256(record: dict[str, Any]) -> str | None:
+    metadata = record.get("metadata_summary", {})
+    value = metadata.get(METADATA_KEY_CORPUS_FINGERPRINT_SHA256)
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
 
 
 def _trace_milvus_chain(
@@ -431,6 +594,16 @@ def _find_milvus_record_id(
         ):
             return artifact_id
     return None
+
+
+def _set_source_artifact_id(
+    step: dict[str, Any],
+    record: dict[str, Any],
+    dependency_type: str,
+) -> None:
+    artifact_id = _dependency_id(record, dependency_type)
+    if artifact_id is not None:
+        step["source_artifact_id"] = artifact_id
 
 
 def _dependency_id(record: dict[str, Any], artifact_type: str) -> str | None:

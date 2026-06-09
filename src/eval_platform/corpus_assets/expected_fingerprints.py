@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from eval_platform.artifacts.metadata_keys import METADATA_KEY_ASSET_FINGERPRINT_SHA256
+from eval_platform.artifacts.metadata_keys import (
+    METADATA_KEY_ASSET_FINGERPRINT_SHA256,
+    METADATA_KEY_CORPUS_FINGERPRINT_SHA256,
+)
 from eval_platform.artifacts.types import (
     NORMALIZED_DATASET_ARTIFACT_TYPE,
     RAW_DATASET_ARTIFACT_TYPE,
@@ -67,6 +70,13 @@ def _automatic_expected_fingerprints_for_dataset(
         spec,
         raw_fingerprint=raw_fingerprint,
     )
+    corpus_fingerprint = _latest_complete_normalized_corpus_fingerprint(
+        spec,
+        inventory,
+        expected_normalized_fingerprint=expected[NORMALIZED_DATASET_ARTIFACT_TYPE],
+    )
+    if corpus_fingerprint is not None:
+        expected[METADATA_KEY_CORPUS_FINGERPRINT_SHA256] = corpus_fingerprint
     return expected
 
 
@@ -94,6 +104,42 @@ def _latest_complete_raw_fingerprint(
 def _record_asset_fingerprint(record: dict[str, Any]) -> str | None:
     metadata = record.get("metadata_summary", {})
     value = metadata.get(METADATA_KEY_ASSET_FINGERPRINT_SHA256)
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
+
+
+def _latest_complete_normalized_corpus_fingerprint(
+    spec: DatasetSpec,
+    inventory: dict[str, Any],
+    *,
+    expected_normalized_fingerprint: str,
+) -> str | None:
+    dataset_inventory = inventory.get("datasets", {}).get(spec.task_name, {})
+    records = dataset_inventory.get("artifacts", {}).get(
+        NORMALIZED_DATASET_ARTIFACT_TYPE,
+        [],
+    )
+    complete_records = [
+        record
+        for record in records
+        if record.get("complete")
+        and _record_asset_fingerprint(record) == expected_normalized_fingerprint
+        and _record_corpus_fingerprint(record) is not None
+    ]
+    if not complete_records:
+        return None
+    selected = sorted(
+        complete_records,
+        key=lambda record: str(record.get("artifact_id") or ""),
+        reverse=True,
+    )[0]
+    return _record_corpus_fingerprint(selected)
+
+
+def _record_corpus_fingerprint(record: dict[str, Any]) -> str | None:
+    metadata = record.get("metadata_summary", {})
+    value = metadata.get(METADATA_KEY_CORPUS_FINGERPRINT_SHA256)
     if isinstance(value, str) and value.strip():
         return value
     return None

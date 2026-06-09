@@ -11,6 +11,7 @@ METADATA_KEY_INDEX_NAME = "index_name"
 METADATA_KEY_COLLECTION_NAME = "collection_name"
 METADATA_KEY_ASSET_FINGERPRINT = "asset_fingerprint"
 METADATA_KEY_ASSET_FINGERPRINT_SHA256 = "asset_fingerprint_sha256"
+METADATA_KEY_CORPUS_FINGERPRINT_SHA256 = "corpus_fingerprint_sha256"
 METADATA_KEY_RAW_DATASET_ARTIFACT_ID = "raw_dataset_artifact_id"
 METADATA_KEY_SOURCE_NORMALIZED_DATASET_ARTIFACT_ID = (
     "source_normalized_dataset_artifact_id"

@@ -1,4 +1,4 @@
-"""Tests for the narrow IFIRNFCorpus corpus asset executor."""
+"""Tests for the narrow IFIR corpus asset executor."""
 
 from __future__ import annotations
 
@@ -42,6 +42,17 @@ def test_validate_args_rejects_non_ifir_dataset() -> None:
                 run_id="run",
             )
         )
+
+
+@pytest.mark.parametrize("dataset", ["IFIRNFCorpus", "IFIRScifact"])
+def test_validate_args_accepts_supported_ifir_datasets(dataset: str) -> None:
+    execute_script._validate_args(
+        argparse.Namespace(
+            dataset=dataset,
+            s3_prefix="sciverse_benchmark/assets",
+            run_id="run",
+        )
+    )
 
 
 def test_validate_args_rejects_test_prefix() -> None:
@@ -116,7 +127,7 @@ def test_run_builds_plan_before_refusing_without_yes(
             )
         )
 
-    assert captured["payload"]["kind"] == "ifir_nfcorpus_corpus_asset_execute_plan"
+    assert captured["payload"]["kind"] == "ifir_corpus_asset_execute_plan"
     assert captured["payload"]["execute"] is False
 
 
