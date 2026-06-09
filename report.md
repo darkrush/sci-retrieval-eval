@@ -4,132 +4,190 @@
 
 ## 1. 任务信息
 
-- 任务名：`自动生成 corpus expected fingerprints，避免误复用旧 IFIR 资产`
-- 当前分支：`fix/corpus-asset-expected-fingerprints`
-- 基线：`origin/main` / `ec70cac Fail recall@inf on incomplete retrieval artifacts (#54)`
+- 任务名：`补 IFIRNFCorpus 真实 corpus asset 构建入口，解锁 Phase 3 smoke`
+- 当前分支：`feat/ifir-corpus-asset-execute`
+- 基线：`origin/main` / `7f48fa3 Fix corpus asset expected fingerprint reuse (#55)`
+- 是否 cherry-pick `6985bf1`：否，#55 已合入 main
 - 完成时间：2026-06-09
 - 实现提交 SHA：提交后由 `git log -1 --oneline` 确认
 
-## 2. 背景
+## 2. 实现摘要
 
-执行 `test_plan.md` 时发现：
-
-- 当前代码已支持 IFIR `mteb_text_plus_instruction` query policy。
-- 但 S3 上旧 IFIR normalized artifacts 仍是旧口径，只保存原始 query，metadata 只有 `instruction`。
-- 常规 `scripts/build_real_corpus_assets.py --reuse-existing` 会继续复用旧 IFIR normalized/chunks/embedding/ES/Milvus 全链条。
-
-这会导致后续 smoke 或 baseline 产出“看起来完整但 query 口径错误”的结果。
-
-## 3. 实现摘要
-
-新增：
-
-- `src/eval_platform/corpus_assets/expected_fingerprints.py`
-
-核心行为：
-
-- 根据当前 dataset registry、raw artifact fingerprint 和 raw normalizer spec 自动生成 corpus expected fingerprints。
-- IFIRNFCorpus / IFIRScifact 的 normalized expected fingerprint 会包含：
+新增专用入口：
 
 ```text
-query_text_policy=mteb_text_plus_instruction
+scripts/execute_ifir_nfcorpus_corpus_assets.py
 ```
 
-- 非 IFIR 数据集不会被错误加入 IFIR query policy。
-- 用户显式传入 `expected_asset_fingerprints_by_slug` 时，显式值优先。
+能力范围：
 
-接入点：
+- 仅支持 `IFIRNFCorpus`。
+- 基于 `build_expected_asset_fingerprints_by_slug(...)` 和 `build_plan_for_datasets(...)` 生成执行计划。
+- 根据 planner action 决定每个 stage 是 `reuse` 还是 `create`。
+- 支持从已有 raw artifact 或 immutable raw S3 prefix 出发。
+- 支持创建：
+  - `normalized_dataset`
+  - `chunked_corpus`
+  - `embeddings`
+  - `elasticsearch_index`
+  - `milvus_collection`
+- 拒绝写入 `test_` prefix。
+- 当前只允许写入 `sciverse_benchmark/assets`。
+- `--yes` 前只输出 plan，不写入。
 
-- `scripts/build_real_corpus_assets.py`
-  - `--reuse-existing` 时自动计算 expected fingerprints 并传给 planner。
-- `src/eval_platform/experiments/corpus_assets.py`
-  - experiment corpus asset resolution 使用同一套 expected fingerprint 逻辑。
+## 3. 安全与验证逻辑
 
-## 4. 真实 dry-run 复验
+新增 preflight：
 
-命令：
+- 如果需要创建 `chunked_corpus`，必须存在：
+  - `config.chunking.repo_path`
+  - `config.chunking.repo_remote`
+  - `config.chunking.commit_sha`
+- 如果需要创建 `embeddings`，必须存在 embedding model / dim / endpoint URL。
+- 如果需要创建 ES index，必须存在 `elasticsearch.url`。
+- 如果需要创建 Milvus collection，必须存在 `milvus.address`。
+
+新增 normalized 验证：
+
+- manifest metadata 必须有 `query_text_policy=mteb_text_plus_instruction`。
+- `queries.jsonl` 抽样必须包含：
+  - `source_query_text`
+  - `instruction`
+  - `effective_query_text`
+  - `query_text_policy`
+  - `instruction_startswith_query_text`
+- `QueryRecord.text` 必须等于 `effective_query_text`。
+
+新增入库 manifest 验证：
+
+- `chunk_count == embedding_count`
+- ES manifest 必须有 `index_name`
+- ES `verified_document_count == chunk_count`
+- Milvus manifest 必须有 `collection_name`
+- Milvus `verified_entity_count == embedding_count`
+
+## 4. 真实执行检查
+
+no-write plan 命令：
 
 ```bash
-env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u NO_PROXY python3 scripts/build_real_corpus_assets.py \
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u NO_PROXY python3 scripts/execute_ifir_nfcorpus_corpus_assets.py \
   --config /home/qiujiuantao/codex_project/sci-base/sciverse_benchmark/config.yaml \
   --s3-prefix sciverse_benchmark/assets \
   --raw-prefix sciverse_benchmark/raw \
-  --dataset IFIRNFCorpus \
   --run-id testplan_ifir_policy_20260609 \
   --reuse-existing \
-  --output tmp/test_plan/phase2_after_fix_ifir_plan.json
+  --output tmp/test_plan/phase3_execute_ifir_plan.json
 ```
 
 结果：
 
-| stage | action |
-| --- | --- |
-| raw_dataset | reuse |
-| normalized_dataset | create |
-| chunked_corpus | create |
-| embeddings | create |
-| elasticsearch_index | create |
-| milvus_collection | create |
+- 成功输出 planner plan。
+- 未写入。
+- 计划显示：
+  - raw_dataset: reuse
+  - normalized_dataset: create
+  - chunked_corpus: create
+  - embeddings: create
+  - elasticsearch_index: create
+  - milvus_collection: create
 
-dry-run 输出包含：
+真实执行命令：
 
-```text
-expected_asset_fingerprints.normalized_dataset=8c0d4a2487cca7b4b2f8939276e423b8e58dacb9defd4ad8407da6bdb24483fc
-expected_asset_fingerprints.raw_dataset=8d8b22573747ce0c5625fd62684a3e4b8d3c03b081cb4721db1dc2c674f795e7
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u NO_PROXY python3 scripts/execute_ifir_nfcorpus_corpus_assets.py \
+  --config /home/qiujiuantao/codex_project/sci-base/sciverse_benchmark/config.yaml \
+  --s3-prefix sciverse_benchmark/assets \
+  --raw-prefix sciverse_benchmark/raw \
+  --run-id testplan_ifir_policy_20260609 \
+  --reuse-existing \
+  --yes \
+  --output tmp/test_plan/phase3_execute_ifir_plan_with_yes.json
 ```
 
-结论：Phase 2 的 planner reuse 阻塞已修复。默认 `--reuse-existing` 不再复用旧 IFIR normalized 及其下游链。
+结果：
+
+```text
+ERROR: Cannot create chunked_corpus: config.chunking.repo_path, repo_remote and commit_sha are required
+```
+
+这是预期的安全失败：当前真实 config 缺少外部 chunker 仓库配置。preflight 在任何写入前失败。
+
+S3 半成品检查：
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u NO_PROXY python3 scripts/view_s3_artifacts.py \
+  --config /home/qiujiuantao/codex_project/sci-base/sciverse_benchmark/config.yaml \
+  --s3-prefix sciverse_benchmark/assets \
+  --artifact-id-contains testplan_ifir_policy_20260609 \
+  --fingerprint any \
+  --limit 50 \
+  --output tmp/test_plan/phase3_after_preflight_inventory.json
+```
+
+结果：
+
+```text
+artifacts: []
+```
+
+确认没有写出半成品 artifact。
 
 ## 5. 测试更新
 
-新增/更新：
+新增：
 
-- `tests/corpus_assets/test_expected_fingerprints.py`
-  - 覆盖 IFIR normalized expected fingerprint 包含 `query_text_policy=mteb_text_plus_instruction`。
-  - 覆盖非 IFIR 不加入 IFIR query policy。
-  - 覆盖显式 expected fingerprints 优先。
-- `tests/experiments/test_corpus_assets.py`
-  - 覆盖 experiment corpus asset resolution 会把 expected fingerprints 传给 planner。
-- `tests/scripts/test_build_real_corpus_assets.py`
-  - 覆盖脚本 `--reuse-existing` 会把 expected fingerprints 传给 planner。
-- `tests/experiments/test_runner.py`
-  - 旧 fixture 复用场景改为显式传入 fixture 自身 fingerprints，避免和新的默认防误复用策略冲突。
+```text
+tests/scripts/test_execute_ifir_nfcorpus_corpus_assets.py
+```
+
+覆盖：
+
+- 拒绝非 `IFIRNFCorpus` dataset。
+- 拒绝 `test_` prefix。
+- 脚本先调用 planner，未传 `--yes` 时只输出 plan 并拒绝写入。
+- normalized 验证能识别旧 IFIR artifact 缺 `query_text_policy`。
+- normalized 验证接受 effective query artifact。
+- preflight 能在缺 chunking config 时拒绝执行。
+- 入库 count 校验失败时报错。
 
 ## 6. 验证结果
 
 已运行：
 
 ```bash
-env PYTHONPATH=src pytest tests/corpus_assets tests/experiments tests/scripts
-env PYTHONPATH=src pytest tests/analysis/test_recall_inf.py tests/datasets/test_raw_normalize.py tests/mteb_adapter
+env PYTHONPATH=src pytest tests/corpus_assets tests/scripts tests/datasets/test_raw_normalize.py
 ruff check .
-env PYTHONPATH=src pytest
 mypy .
+env PYTHONPATH=src pytest
 ```
 
 结果：
 
-- `tests/corpus_assets tests/experiments tests/scripts`: passed, 38 passed
-- `tests/analysis/test_recall_inf.py tests/datasets/test_raw_normalize.py tests/mteb_adapter`: passed, 112 passed
+- `tests/corpus_assets tests/scripts tests/datasets/test_raw_normalize.py`: passed, 61 passed
 - `ruff check .`: passed
-- full `pytest`: passed, 774 passed
 - `mypy .`: passed
+- full `pytest`: passed, 781 passed
 
 ## 7. 外部服务访问
 
-- 真实 S3：yes，只读 inventory / manifest / dry-run 检查
+- 真实 S3：yes，只读 plan / inventory；未写入
 - 真实 ES：no
 - 真实 Milvus：no
 - 真实 embedding：no
 - 真实 rerank：no
 - 真实 rewrite：no
 
-## 8. 剩余事项
+## 8. 剩余阻塞
 
-`test_plan.md` 的 Phase 3 尚未执行。原因：
+`test_plan.md` Phase 3 仍未完成。
 
-- Phase 3 需要可用的新 IFIR normalized/chunk/embedding/ES/Milvus 资产。
-- 当前仓库只有 `build_real_corpus_assets.py` dry-run planner，`--execute` 明确未实现。
-- 修复后 planner 正确要求创建新 IFIR normalized 及下游资产，但当前没有正式脚本执行这条真实构建链。
+阻塞原因不是代码入口缺失，而是当前真实配置缺少外部 chunker 配置：
 
-下一步应补真实 corpus asset build runner/脚本，或使用已有外部 runner 先构建新 IFIR assets，再继续 Phase 3 smoke。
+```text
+chunking.repo_path
+chunking.repo_remote
+chunking.commit_sha
+```
+
+补齐上述 config 后，可以重跑真实构建命令。构建出新的 IFIRNFCorpus corpus assets 后，再继续 Phase 3 的 E1-E4 smoke。
