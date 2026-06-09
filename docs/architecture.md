@@ -111,6 +111,9 @@ Sciverse benchmark v1 默认协议：
 
 统一 `title.max_length=65535` 会让新建 Milvus collection 的 schema fingerprint 不同于部分历史旧 collection 的 `title.max_length=4096`，这是为兼容 LitSearch 长标题的预期变化。
 
+实验运行、比较和审计的操作口径集中记录在
+[`docs/operations/experiment_audit_policy.md`](operations/experiment_audit_policy.md)。
+
 ## 7. 当前阶段
 
 当前主线已经覆盖：
@@ -147,6 +150,8 @@ Sciverse benchmark v1 默认协议：
 - `docs/architecture.md`：本文件，维护项目背景、架构、阶段目标和原则。
 - `docs/decisions/*.md`：ADR，保留关键设计历史，不作为开发 session 必读材料。
 - `docs/operations/*.md`：真实环境运行手册，按需要阅读。
+  - `docs/operations/experiment_audit_policy.md`：实验默认口径、trace mode、fingerprint
+    reuse、PAPER_CAP、IFIR policy 和 recall@inf 的审计说明。
 - `TASK.md`：当前任务单，本地 ignored，不进 git。
 - `report.md`：开发 session 的交付报告，随 PR 提交。
 

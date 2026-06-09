@@ -222,6 +222,9 @@ main 分支当前的实验抽象是 Python API，不是正式 CLI。推荐流程
 
 复用规则以 `asset_fingerprint_sha256` 为准。catalog 是查询加速索引，不是唯一真相；唯一真相仍是 artifact 目录中的 manifest 和 `_SUCCESS`。如果只改变 rerank 或 metric 配置，系统应复用 corpus / index 资产，只补跑受影响的 retrieval、metrics 或 benchmark stage。
 
+实验运行、比较和审计口径见
+[`docs/operations/experiment_audit_policy.md`](docs/operations/experiment_audit_policy.md)。
+
 ## Benchmark 运行口径
 
 当前评测 setting：
