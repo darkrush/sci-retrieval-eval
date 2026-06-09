@@ -4,62 +4,63 @@
 
 ## 1. 任务信息
 
-- 任务名：`补充 experiment audit policy 文档`
-- 当前分支：`docs/experiment-audit-policy`
-- 基线：`origin/main` / `d9e6fec Move recall@inf diagnostics to analysis (#52)`
+- 任务名：`严化 recall@inf incomplete artifact 行为`
+- 当前分支：`fix/recall-inf-incomplete-artifact`
+- 基线：`origin/main` / `3c9fcc9 Document experiment audit policy (#53)`
 - 完成时间：2026-06-09
-- 实现提交 SHA：`312aa1c Document experiment audit policy`
-- 报告校正提交 SHA：本报告校正提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA
+- 实现提交 SHA：待提交后补充
+- 报告校正提交 SHA：待提交后补充
 
-## 2. 新增 / 更新文档
+## 2. 实现摘要
 
-新增：
+- 在 `eval_platform.analysis.recall_inf` 中新增 `RecallInfAnalysisError`。
+- `compute_recall_inf_metrics(...)` 读取 retrieval results 前会检查 `retrieval_run`
+  artifact 是否 complete。
+- 当 `retrieval_run` artifact 不存在、缺少 `_MANIFEST.json` 或缺少 `_SUCCESS` 时，
+  recall@inf analysis 显式失败，不再把 retrieval 结果当作空集合并产出 0 recall。
+- `experiment_run` 汇总复用已有 benchmark 时，如果 child `retrieval_run` artifact 已不可用，
+  上层不追加 recall@inf diagnostic metrics，表示该诊断 unavailable；非 benchmark reuse
+  路径仍会继续抛出 `RecallInfAnalysisError`。
+- 保持 recall@inf 公式、trace schema、experiment schema、retrieval runner、
+  metrics runner 和 planner 行为不变。
 
-- `docs/operations/experiment_audit_policy.md`
+## 3. 测试更新
 
 更新：
 
-- `README.md`
-  - 在 Experiment 运行层补充 experiment audit policy 入口链接。
-- `docs/architecture.md`
-  - 在评测语义和文档结构中补充 experiment audit policy 入口链接。
+- `tests/analysis/test_recall_inf.py`
+  - 覆盖 complete normalized dataset + 不存在的 retrieval_run artifact。
+  - 覆盖 complete normalized dataset + retrieval_run manifest 存在但无 `_SUCCESS`。
+  - 保留既有 complete retrieval_run 的 recall@inf 行为测试。
 
-## 3. 内容摘要
+## 4. 文档更新
 
-`experiment_audit_policy.md` 覆盖：
+更新：
 
-- Sciverse benchmark v1 默认口径 checklist。
-- `trace_mode=replay/light/none` 的适用场景和诊断影响。
-- fingerprint / reuse policy，以及 code commit 进入 fingerprint 的保守审计策略。
-- 哪些变化会产生新 baseline。
-- PAPER_CAP 的解释边界。
-- IFIR effective query policy 的简要说明和 ADR 链接。
-- recall@inf 的 diagnostic 语义和解释边界。
-- smoke / full baseline / diagnostic / low-storage / cross-cluster reproduction 的推荐运行矩阵。
-
-## 4. 是否改代码
-
-否。
-
-本轮只改文档和 `report.md`，没有修改代码、默认值、CLI、artifact schema、retrieval runner 或 metrics runner。
+- `docs/operations/experiment_audit_policy.md`
+  - 明确缺失或 incomplete 的 `retrieval_run` artifact 不能被解释为 0 recall。
+  - 这类情况必须显式失败，或由上层报告标记为 unavailable。
 
 ## 5. 验证结果
 
 已运行：
 
 ```bash
-git diff --check
-test -f docs/operations/experiment_audit_policy.md
-test -f docs/decisions/0024-ifir-effective-query-policy.md
+env PYTHONPATH=src pytest tests/analysis/test_recall_inf.py tests/experiments/test_runner.py
+env PYTHONPATH=src pytest
+ruff check .
+mypy .
 ```
 
 结果：
 
-- `git diff --check`
+- `env PYTHONPATH=src pytest tests/analysis/test_recall_inf.py tests/experiments/test_runner.py`
+  - passed，47 passed
+- `env PYTHONPATH=src pytest`
+  - passed，770 passed
+- `ruff check .`
   - passed
-- `test -f docs/operations/experiment_audit_policy.md`
-  - passed
-- `test -f docs/decisions/0024-ifir-effective-query-policy.md`
+- `mypy .`
   - passed
 
 ## 6. 外部服务访问

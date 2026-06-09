@@ -141,6 +141,8 @@ doc_id -> metadata.paper_id -> chunk_id
 该诊断逻辑由 `eval_platform.analysis.recall_inf` 计算，并合并到 experiment item summary。
 如果 trace mode 过轻或为 `none`，recall@inf 解释能力会下降，尤其难以区分 ES、Milvus、
 fusion 和 rerank 的贡献。
+缺失或 incomplete 的 `retrieval_run` artifact 不能被解释为 0 recall；这类情况必须显式失败，
+或由上层报告标记为 unavailable。
 
 ## 8. 推荐运行矩阵
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from eval_platform.analysis import compute_recall_inf_metrics
+from eval_platform.analysis import RecallInfAnalysisError, compute_recall_inf_metrics
 from eval_platform.artifacts import ArtifactDependency, ArtifactManifest, ArtifactStore
 from eval_platform.artifacts.catalog import (
     ArtifactCatalogRecord,
@@ -191,15 +191,19 @@ def run_experiment(
                     code_git_sha=config.code_git_sha,
                 )
         aggregate_metrics = dict(benchmark_summary.aggregate_metrics)
-        aggregate_metrics.update(
-            compute_recall_inf_metrics(
-                read_store,
-                source_normalized_dataset_artifact_id=(
-                    benchmark_summary.source_normalized_dataset_artifact_id
-                ),
-                retrieval_run_artifact_id=benchmark_summary.retrieval_run_artifact_id,
+        try:
+            aggregate_metrics.update(
+                compute_recall_inf_metrics(
+                    read_store,
+                    source_normalized_dataset_artifact_id=(
+                        benchmark_summary.source_normalized_dataset_artifact_id
+                    ),
+                    retrieval_run_artifact_id=benchmark_summary.retrieval_run_artifact_id,
+                )
             )
-        )
+        except RecallInfAnalysisError:
+            if item.benchmark.action != "reuse":
+                raise
         summaries.append(
             ExperimentRunItemSummary(
                 dataset_key=item.dataset_key,
