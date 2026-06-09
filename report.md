@@ -8,7 +8,8 @@
 - 当前分支：`feat/ifir-effective-query-policy`
 - 基线：`origin/main` / `5692468 feat: add recall at inf metric (#50)`
 - 完成时间：2026-06-09
-- 最终 commit SHA：提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA
+- 实现提交 SHA：`128b6ba Fix IFIR effective query policy`
+- 报告校正提交 SHA：本报告校正提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA
 
 ## 2. 实现摘要
 
