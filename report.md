@@ -4,84 +4,64 @@
 
 ## 1. 任务信息
 
-- 任务名：`IFIR effective query policy 验收返工`
-- 当前分支：`feat/ifir-effective-query-policy`
-- 基线：`origin/main` / `5692468 feat: add recall at inf metric (#50)`
+- 任务名：`拆出 recall@inf analysis helper`
+- 当前分支：`refactor/recall-inf-analysis-helper`
+- 基线：`origin/main` / `2d79fcc Fix IFIR effective query policy (#51)`
 - 完成时间：2026-06-09
-- 实现提交 SHA：`128b6ba Fix IFIR effective query policy`
-- 前次报告提交 SHA：`5002d86 Update IFIR policy report`
-- 本轮返工提交 SHA：提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA
+- 最终 commit SHA：提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA
 
-## 2. 实现摘要
+## 2. 本轮改动摘要
 
-本轮把 IFIR effective query 构造固化到 raw-to-normalized 阶段：
+本轮是纯结构重构，不改变 recall@inf 指标语义。
 
-- `IFIRNFCorpus` 和 `IFIRScifact` 默认使用 `mteb_text_plus_instruction`。
-- IFIR normalized `QueryRecord.text` 现在是实际送入后续 embedding / retrieval 的 effective query。
-- query metadata 保留：
-  - `source_query_text`
-  - `instruction`
-  - `effective_query_text`
-  - `query_text_policy`
-  - `instruction_startswith_query_text`
-- manifest metadata 对 IFIR 记录：
-  - `has_instructions`
-  - `query_text_policy`
-  - `effective_query_text_field`
-  - `source_query_text_metadata_key`
-  - `instruction_startswith_query_text_count`
-- 普通 `NFCorpus` / `SciFact` 不设置 IFIR policy，不改写 query text。
-- MTEB adapter 的 IFIR normalizer 现在同样执行 MTEB effective query policy：
-  - `IFIRNFCorpusNormalizer`
-  - `IFIRScifactNormalizer`
-- 如果 MTEB adapter query payload 已经有 `effective_query_text`，或显式标记
-  `query_text_policy == "mteb_loader_effective_text"`，则信任已有 effective text，不再次拼接。
+- 新增 `src/eval_platform/analysis/__init__.py`。
+- 新增 `src/eval_platform/analysis/recall_inf.py`。
+- 将以下 helper 从 `src/eval_platform/experiments/runner.py` 迁入 analysis 模块：
+  - `compute_recall_inf_metrics`
+  - `_stream_retrieval_doc_ids`
+  - `_record_doc_ids_from_raw`
+  - `_trace_doc_ids`
+  - `_record_doc_ids`
+  - `_trace_hit_doc_id`
+  - `_recall_inf`
+  - `_mean`
+- `run_experiment(...)` 现在只 import 并调用 `compute_recall_inf_metrics(...)`，不再包含 retrieval trace 解析细节。
+- 将 `tests/experiments/test_recall_inf_metrics.py` 迁移为 `tests/analysis/test_recall_inf.py`。
+- 在 `tests/experiments/test_runner.py` 增加轻量集成断言，确认 `run_experiment(...)` 会把 analysis helper 返回的 metrics merge 到 item summary aggregate metrics。
 
-## 3. IFIR policy 行为
+## 3. 模块边界
 
-`mteb_text_plus_instruction`：
+迁移前：
 
-```text
-effective_query_text = query_text + " " + instruction
-```
+- `experiments.runner` 同时负责 experiment plan / materialize / catalog / summary，以及 recall@inf trace 解析和诊断指标计算。
 
-即使 `instruction.startswith(query_text)` 为 `True`，也不去重。MTEB pinned IFIR 数据当前会出现 query 文本重复一次，这是 MTEB loader 行为和 pinned revision 共同定义出的可复现口径。
+迁移后：
 
-`ifir_original_query_plus_instruction_once`：
+- `eval_platform.analysis.recall_inf` 负责 recall@inf 诊断计算和 retrieval trace doc id 提取。
+- `experiments.runner` 只负责 orchestration，并在生成 item summary 时调用 analysis helper。
 
-```text
-effective_query_text = query_text + " " + instruction
-```
+## 4. 行为变化
 
-但如果 instruction 已经以 query text 开头，会抛出 `RawNormalizeError`，避免原始 IFIR 官方数据或已合成 query 被二次拼接。
+不改变行为。
 
-缺失 instruction 的 IFIR query 会抛出 `RawNormalizeError`，不会静默退化为普通 query。
+保持不变的内容：
 
-## 4. 测试覆盖
+- recall@inf 指标公式。
+- `es_recall_at_inf`、`milvus_recall_at_inf`、`rrf_recall_at_inf`、
+  `rrf_intersect_es_recall_at_inf`、`rrf_intersect_milvus_recall_at_inf` 的 key 和计算方式。
+- 支持 top-level `es_hits` / `milvus_hits` / `paper_capped_hits` / `fused_hits`。
+- 支持 `trace["per_query"][...]["es_hits"]` 和 `trace["per_query"][...]["milvus_hits"]`。
+- 保留 final `record["hits"]` fallback。
+- doc id fallback 顺序仍为 `doc_id -> metadata.paper_id -> chunk_id`。
 
-新增/更新测试覆盖：
-
-- `IFIRNFCorpus` MTEB raw 格式 `Q` + `Q I` 输出 `Q Q I`。
-- `IFIRScifact` 同样使用 `mteb_text_plus_instruction`。
-- query metadata 保留 source query、instruction、effective query、policy 和 startswith 标志。
-- manifest metadata 记录 policy 和 `instruction_startswith_query_text_count`。
-- 非 IFIR `NFCorpus` / `SciFact` 不写入 IFIR policy，query text 不被改写。
-- `ifir_original_query_plus_instruction_once` 正常拼一次。
-- `ifir_original_query_plus_instruction_once` 遇到 instruction 已含 query 时失败。
-- 缺失 instruction 的 IFIR query 明确失败。
-- MTEB adapter 不对已经由 loader 合成过的 query 二次拼接。
-- `IFIRNFCorpusNormalizer().normalize(...)` 遇到 `{text: "Q", instruction: "Q I"}` 输出
-  `QueryRecord.text == "Q Q I"`。
-- `IFIRScifactNormalizer().normalize(...)` 同样覆盖。
-- instruction 不以 query 开头时输出 `Q I`，并记录
-  `instruction_startswith_query_text is False`。
+当前 `origin/main` 上没有输出 `recall_inf_query_count`，本轮没有新增该 key，以保持纯结构重构。
 
 ## 5. 验证结果
 
 已运行：
 
 ```bash
-env PYTHONPATH=src pytest tests/mteb_adapter tests/datasets/test_raw_normalize.py
+env PYTHONPATH=src pytest tests/analysis tests/experiments
 env PYTHONPATH=src pytest
 ruff check .
 mypy .
@@ -89,24 +69,16 @@ mypy .
 
 结果：
 
-- `env PYTHONPATH=src pytest tests/mteb_adapter tests/datasets/test_raw_normalize.py`
-  - `74 passed in 0.25s`
+- `env PYTHONPATH=src pytest tests/analysis tests/experiments`
+  - `45 passed in 0.35s`
 - `env PYTHONPATH=src pytest`
-  - `767 passed in 2.66s`
+  - `768 passed in 2.71s`
 - `ruff check .`
   - `All checks passed!`
 - `mypy .`
-  - `Success: no issues found in 190 source files`
+  - `Success: no issues found in 192 source files`
 
-## 6. 兼容性影响
-
-本轮会改变新生成的 IFIR normalized dataset：`QueryRecord.text` 从原始 query 变为 effective query。
-因此下游 retrieval / metrics artifact 以及依赖 normalized query text 的 artifact fingerprint 会变化。
-这是预期变化，因为此前 IFIR 可能没有实际使用 instruction。
-
-已有已生成 artifact 不会被本轮代码自动重建；需要后续调度显式重建 IFIR normalized/downstream 资产。
-
-## 7. 外部服务访问
+## 6. 外部服务访问
 
 - 是否访问真实 S3：`no`
 - 是否访问真实 ES：`no`
@@ -115,9 +87,11 @@ mypy .
 - 是否访问真实 rerank：`no`
 - 是否访问真实 rewrite：`no`
 
-## 8. 未实现项
+## 7. 未实现项
 
-- 未重跑真实五数据集实验。
-- 未重建 S3 corpus / embedding / ES / Milvus 资产。
-- 未修改 retrieval / benchmark runner 主流程。
-- 未实现新的实验脚本。
+- 未改变 retrieval trace schema。
+- 未改变 experiment_run artifact schema。
+- 未新增 query_analysis artifact。
+- 未修改 retrieval runner。
+- 未修改 metrics runner。
+- 未重跑真实实验。
