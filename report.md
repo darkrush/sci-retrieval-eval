@@ -4,80 +4,63 @@
 
 ## 1. 任务信息
 
-- 任务名：`拆出 recall@inf analysis helper`
-- 当前分支：`refactor/recall-inf-analysis-helper`
-- 基线：`origin/main` / `2d79fcc Fix IFIR effective query policy (#51)`
+- 任务名：`补充 experiment audit policy 文档`
+- 当前分支：`docs/experiment-audit-policy`
+- 基线：`origin/main` / `d9e6fec Move recall@inf diagnostics to analysis (#52)`
 - 完成时间：2026-06-09
-- 实现提交 SHA：`8f950d8 Move recall inf diagnostics to analysis`
+- 实现提交 SHA：`312aa1c Document experiment audit policy`
 - 报告校正提交 SHA：本报告校正提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA
 
-## 2. 本轮改动摘要
+## 2. 新增 / 更新文档
 
-本轮是纯结构重构，不改变 recall@inf 指标语义。
+新增：
 
-- 新增 `src/eval_platform/analysis/__init__.py`。
-- 新增 `src/eval_platform/analysis/recall_inf.py`。
-- 将以下 helper 从 `src/eval_platform/experiments/runner.py` 迁入 analysis 模块：
-  - `compute_recall_inf_metrics`
-  - `_stream_retrieval_doc_ids`
-  - `_record_doc_ids_from_raw`
-  - `_trace_doc_ids`
-  - `_record_doc_ids`
-  - `_trace_hit_doc_id`
-  - `_recall_inf`
-  - `_mean`
-- `run_experiment(...)` 现在只 import 并调用 `compute_recall_inf_metrics(...)`，不再包含 retrieval trace 解析细节。
-- 将 `tests/experiments/test_recall_inf_metrics.py` 迁移为 `tests/analysis/test_recall_inf.py`。
-- 在 `tests/experiments/test_runner.py` 增加轻量集成断言，确认 `run_experiment(...)` 会把 analysis helper 返回的 metrics merge 到 item summary aggregate metrics。
+- `docs/operations/experiment_audit_policy.md`
 
-## 3. 模块边界
+更新：
 
-迁移前：
+- `README.md`
+  - 在 Experiment 运行层补充 experiment audit policy 入口链接。
+- `docs/architecture.md`
+  - 在评测语义和文档结构中补充 experiment audit policy 入口链接。
 
-- `experiments.runner` 同时负责 experiment plan / materialize / catalog / summary，以及 recall@inf trace 解析和诊断指标计算。
+## 3. 内容摘要
 
-迁移后：
+`experiment_audit_policy.md` 覆盖：
 
-- `eval_platform.analysis.recall_inf` 负责 recall@inf 诊断计算和 retrieval trace doc id 提取。
-- `experiments.runner` 只负责 orchestration，并在生成 item summary 时调用 analysis helper。
+- Sciverse benchmark v1 默认口径 checklist。
+- `trace_mode=replay/light/none` 的适用场景和诊断影响。
+- fingerprint / reuse policy，以及 code commit 进入 fingerprint 的保守审计策略。
+- 哪些变化会产生新 baseline。
+- PAPER_CAP 的解释边界。
+- IFIR effective query policy 的简要说明和 ADR 链接。
+- recall@inf 的 diagnostic 语义和解释边界。
+- smoke / full baseline / diagnostic / low-storage / cross-cluster reproduction 的推荐运行矩阵。
 
-## 4. 行为变化
+## 4. 是否改代码
 
-不改变行为。
+否。
 
-保持不变的内容：
-
-- recall@inf 指标公式。
-- `es_recall_at_inf`、`milvus_recall_at_inf`、`rrf_recall_at_inf`、
-  `rrf_intersect_es_recall_at_inf`、`rrf_intersect_milvus_recall_at_inf` 的 key 和计算方式。
-- 支持 top-level `es_hits` / `milvus_hits` / `paper_capped_hits` / `fused_hits`。
-- 支持 `trace["per_query"][...]["es_hits"]` 和 `trace["per_query"][...]["milvus_hits"]`。
-- 保留 final `record["hits"]` fallback。
-- doc id fallback 顺序仍为 `doc_id -> metadata.paper_id -> chunk_id`。
-
-当前 `origin/main` 上没有输出 `recall_inf_query_count`，本轮没有新增该 key，以保持纯结构重构。
+本轮只改文档和 `report.md`，没有修改代码、默认值、CLI、artifact schema、retrieval runner 或 metrics runner。
 
 ## 5. 验证结果
 
 已运行：
 
 ```bash
-env PYTHONPATH=src pytest tests/analysis tests/experiments
-env PYTHONPATH=src pytest
-ruff check .
-mypy .
+git diff --check
+test -f docs/operations/experiment_audit_policy.md
+test -f docs/decisions/0024-ifir-effective-query-policy.md
 ```
 
 结果：
 
-- `env PYTHONPATH=src pytest tests/analysis tests/experiments`
-  - `45 passed in 0.35s`
-- `env PYTHONPATH=src pytest`
-  - `768 passed in 2.71s`
-- `ruff check .`
-  - `All checks passed!`
-- `mypy .`
-  - `Success: no issues found in 192 source files`
+- `git diff --check`
+  - passed
+- `test -f docs/operations/experiment_audit_policy.md`
+  - passed
+- `test -f docs/decisions/0024-ifir-effective-query-policy.md`
+  - passed
 
 ## 6. 外部服务访问
 
@@ -87,12 +70,3 @@ mypy .
 - 是否访问真实 embedding：`no`
 - 是否访问真实 rerank：`no`
 - 是否访问真实 rewrite：`no`
-
-## 7. 未实现项
-
-- 未改变 retrieval trace schema。
-- 未改变 experiment_run artifact schema。
-- 未新增 query_analysis artifact。
-- 未修改 retrieval runner。
-- 未修改 metrics runner。
-- 未重跑真实实验。
