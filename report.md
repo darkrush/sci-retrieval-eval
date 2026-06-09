@@ -8,8 +8,8 @@
 - 当前分支：`fix/recall-inf-incomplete-artifact`
 - 基线：`origin/main` / `3c9fcc9 Document experiment audit policy (#53)`
 - 完成时间：2026-06-09
-- 实现提交 SHA：待提交后补充
-- 报告校正提交 SHA：待提交后补充
+- 实现提交 SHA：`2336bb4 Fail recall inf on incomplete retrieval artifacts`
+- 报告校正提交 SHA：本报告校正提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA
 
 ## 2. 实现摘要
 
