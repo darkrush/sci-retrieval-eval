@@ -8,7 +8,8 @@
 - 当前分支：`docs/experiment-audit-policy`
 - 基线：`origin/main` / `d9e6fec Move recall@inf diagnostics to analysis (#52)`
 - 完成时间：2026-06-09
-- 最终 commit SHA：提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA
+- 实现提交 SHA：`312aa1c Document experiment audit policy`
+- 报告校正提交 SHA：本报告校正提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA
 
 ## 2. 新增 / 更新文档
 
