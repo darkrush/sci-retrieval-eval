@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+import eval_platform.experiments.runner as experiment_runner
 from eval_platform.artifacts import (
     ArtifactCatalogRecord,
     ArtifactDependency,
@@ -166,6 +167,34 @@ def test_run_experiment_computes_recall_inf_with_split_source_output_stores(
     assert "milvus_recall_at_inf" in metrics
     assert "rrf_recall_at_inf" in metrics
     assert metrics["es_recall_at_inf"] == pytest.approx(1.0)
+
+
+def test_run_experiment_merges_recall_inf_analysis_metrics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = LocalArtifactStore(tmp_path)
+    _write_small_dataset_and_assets(store)
+
+    def fake_compute_recall_inf_metrics(*args: object, **kwargs: object) -> dict[str, float]:
+        return {"es_recall_at_inf": 0.25, "rrf_recall_at_inf": 0.75}
+
+    monkeypatch.setattr(
+        experiment_runner,
+        "compute_recall_inf_metrics",
+        fake_compute_recall_inf_metrics,
+    )
+
+    run_experiment(
+        store,
+        store,
+        _experiment_config("exp-analysis-merge"),
+        es_client=FakeElasticsearchClient(),
+    )
+    summary = read_experiment_run_artifact(store, "exp-analysis-merge")
+
+    assert summary.items[0].aggregate_metrics["es_recall_at_inf"] == 0.25
+    assert summary.items[0].aggregate_metrics["rrf_recall_at_inf"] == 0.75
 
 
 def test_run_experiment_reuses_benchmark_without_recreating_child_stages(

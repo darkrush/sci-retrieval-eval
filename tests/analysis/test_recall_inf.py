@@ -1,4 +1,4 @@
-"""Tests for _compute_recall_inf_metrics and its helper functions."""
+"""Tests for recall@inf analysis helpers."""
 
 from __future__ import annotations
 
@@ -6,6 +6,14 @@ from pathlib import Path
 
 import pytest
 
+from eval_platform.analysis.recall_inf import (
+    _mean,
+    _recall_inf,
+    _record_doc_ids,
+    _trace_doc_ids,
+    _trace_hit_doc_id,
+    compute_recall_inf_metrics,
+)
 from eval_platform.artifacts import LocalArtifactStore
 from eval_platform.datasets import (
     CorpusRecord,
@@ -13,14 +21,6 @@ from eval_platform.datasets import (
     QrelRecord,
     QueryRecord,
     write_normalized_dataset_artifact,
-)
-from eval_platform.experiments.runner import (
-    _compute_recall_inf_metrics,
-    _mean,
-    _recall_inf,
-    _record_doc_ids,
-    _trace_doc_ids,
-    _trace_hit_doc_id,
 )
 from eval_platform.retrieval import RetrievalHit, RetrievalQueryResult, write_retrieval_run_artifact
 
@@ -236,7 +236,7 @@ class TestComputeRecallInfMetrics:
             ],
         )
 
-        result = _compute_recall_inf_metrics(
+        result = compute_recall_inf_metrics(
             store,
             source_normalized_dataset_artifact_id=normalized_id,
             retrieval_run_artifact_id=retrieval_id,
@@ -301,7 +301,7 @@ class TestComputeRecallInfMetrics:
             ],
         )
 
-        result = _compute_recall_inf_metrics(
+        result = compute_recall_inf_metrics(
             store,
             source_normalized_dataset_artifact_id=normalized_id,
             retrieval_run_artifact_id=retrieval_id,
@@ -345,7 +345,7 @@ class TestComputeRecallInfMetrics:
             ],
         )
 
-        result = _compute_recall_inf_metrics(
+        result = compute_recall_inf_metrics(
             store,
             source_normalized_dataset_artifact_id=normalized_id,
             retrieval_run_artifact_id=retrieval_id,
@@ -360,7 +360,7 @@ class TestComputeRecallInfMetrics:
     def test_raises_when_artifact_missing(self, tmp_path: Path) -> None:
         store = LocalArtifactStore(tmp_path)
         with pytest.raises(Exception, match="Artifact is incomplete"):
-            _compute_recall_inf_metrics(
+            compute_recall_inf_metrics(
                 store,
                 source_normalized_dataset_artifact_id="nonexistent",
                 retrieval_run_artifact_id="nonexistent",
@@ -414,7 +414,7 @@ class TestComputeRecallInfMetrics:
             ],
         )
 
-        result = _compute_recall_inf_metrics(
+        result = compute_recall_inf_metrics(
             store,
             source_normalized_dataset_artifact_id=normalized_id,
             retrieval_run_artifact_id=retrieval_id,
@@ -467,7 +467,7 @@ class TestComputeRecallInfMetrics:
             ],
         )
 
-        result = _compute_recall_inf_metrics(
+        result = compute_recall_inf_metrics(
             store,
             source_normalized_dataset_artifact_id=normalized_id,
             retrieval_run_artifact_id=retrieval_id,
@@ -527,7 +527,7 @@ class TestComputeRecallInfMetrics:
             ],
         )
 
-        result = _compute_recall_inf_metrics(
+        result = compute_recall_inf_metrics(
             store,
             source_normalized_dataset_artifact_id=normalized_id,
             retrieval_run_artifact_id=retrieval_id,
