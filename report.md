@@ -4,12 +4,13 @@
 
 ## 1. 任务信息
 
-- 任务名：`修正 IFIR 数据用法与 effective query 构造`
+- 任务名：`IFIR effective query policy 验收返工`
 - 当前分支：`feat/ifir-effective-query-policy`
 - 基线：`origin/main` / `5692468 feat: add recall at inf metric (#50)`
 - 完成时间：2026-06-09
 - 实现提交 SHA：`128b6ba Fix IFIR effective query policy`
-- 报告校正提交 SHA：本报告校正提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA
+- 前次报告提交 SHA：`5002d86 Update IFIR policy report`
+- 本轮返工提交 SHA：提交后由 `git log -1 --oneline` 确认；提交内容无法自引用自身 SHA
 
 ## 2. 实现摘要
 
@@ -30,7 +31,11 @@
   - `source_query_text_metadata_key`
   - `instruction_startswith_query_text_count`
 - 普通 `NFCorpus` / `SciFact` 不设置 IFIR policy，不改写 query text。
-- MTEB adapter conversion 增加测试锁定：如果 MTEB loader 已经给出 effective `text`，平台不再次拼接 instruction。
+- MTEB adapter 的 IFIR normalizer 现在同样执行 MTEB effective query policy：
+  - `IFIRNFCorpusNormalizer`
+  - `IFIRScifactNormalizer`
+- 如果 MTEB adapter query payload 已经有 `effective_query_text`，或显式标记
+  `query_text_policy == "mteb_loader_effective_text"`，则信任已有 effective text，不再次拼接。
 
 ## 3. IFIR policy 行为
 
@@ -65,13 +70,18 @@ effective_query_text = query_text + " " + instruction
 - `ifir_original_query_plus_instruction_once` 遇到 instruction 已含 query 时失败。
 - 缺失 instruction 的 IFIR query 明确失败。
 - MTEB adapter 不对已经由 loader 合成过的 query 二次拼接。
+- `IFIRNFCorpusNormalizer().normalize(...)` 遇到 `{text: "Q", instruction: "Q I"}` 输出
+  `QueryRecord.text == "Q Q I"`。
+- `IFIRScifactNormalizer().normalize(...)` 同样覆盖。
+- instruction 不以 query 开头时输出 `Q I`，并记录
+  `instruction_startswith_query_text is False`。
 
 ## 5. 验证结果
 
 已运行：
 
 ```bash
-env PYTHONPATH=src pytest tests/datasets/test_raw_normalize.py tests/mteb_adapter
+env PYTHONPATH=src pytest tests/mteb_adapter tests/datasets/test_raw_normalize.py
 env PYTHONPATH=src pytest
 ruff check .
 mypy .
@@ -79,14 +89,14 @@ mypy .
 
 结果：
 
-- `env PYTHONPATH=src pytest tests/datasets/test_raw_normalize.py tests/mteb_adapter`
-  - `69 passed in 0.19s`
+- `env PYTHONPATH=src pytest tests/mteb_adapter tests/datasets/test_raw_normalize.py`
+  - `74 passed in 0.25s`
 - `env PYTHONPATH=src pytest`
-  - `762 passed in 3.09s`
+  - `767 passed in 2.66s`
 - `ruff check .`
   - `All checks passed!`
 - `mypy .`
-  - `Success: no issues found in 189 source files`
+  - `Success: no issues found in 190 source files`
 
 ## 6. 兼容性影响
 
