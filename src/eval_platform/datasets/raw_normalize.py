@@ -6,7 +6,7 @@ import csv
 import io
 import json
 from pathlib import PurePosixPath
-from typing import Any, BinaryIO, Literal, Protocol
+from typing import Any, BinaryIO, Final, Literal, Protocol
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
@@ -29,6 +29,16 @@ from eval_platform.datasets.schema import (
 )
 
 _NORMALIZED_SCHEMA_VERSION = "1"
+IFIRQueryTextPolicy = Literal[
+    "mteb_text_plus_instruction",
+    "ifir_original_query_plus_instruction_once",
+]
+IFIR_MTEB_TEXT_PLUS_INSTRUCTION_POLICY: Final[IFIRQueryTextPolicy] = (
+    "mteb_text_plus_instruction"
+)
+IFIR_ORIGINAL_QUERY_PLUS_INSTRUCTION_ONCE_POLICY: Final[IFIRQueryTextPolicy] = (
+    "ifir_original_query_plus_instruction_once"
+)
 
 
 class RawNormalizerSpec(BaseModel):
@@ -38,6 +48,7 @@ class RawNormalizerSpec(BaseModel):
     normalizer_name: str
     raw_format: Literal["jsonl_tsv", "parquet_dir_shards"]
     has_instructions: bool = False
+    query_text_policy: IFIRQueryTextPolicy | None = None
 
 
 RAW_NORMALIZER_SPECS: dict[str, RawNormalizerSpec] = {
@@ -46,12 +57,14 @@ RAW_NORMALIZER_SPECS: dict[str, RawNormalizerSpec] = {
         normalizer_name="ifir_nfcorpus_raw_jsonl_tsv_v1",
         raw_format="jsonl_tsv",
         has_instructions=True,
+        query_text_policy=IFIR_MTEB_TEXT_PLUS_INSTRUCTION_POLICY,
     ),
     "IFIRScifact": RawNormalizerSpec(
         dataset_name="IFIRScifact",
         normalizer_name="ifir_scifact_raw_jsonl_tsv_v1",
         raw_format="jsonl_tsv",
         has_instructions=True,
+        query_text_policy=IFIR_MTEB_TEXT_PLUS_INSTRUCTION_POLICY,
     ),
     "NFCorpus": RawNormalizerSpec(
         dataset_name="NFCorpus",
@@ -218,18 +231,78 @@ def _rows_to_queries(
     query_rows: list[dict[str, Any]],
     *,
     instructions_by_query_id: dict[str, str] | None = None,
+    query_text_policy: IFIRQueryTextPolicy | None = None,
 ) -> list[QueryRecord]:
     instructions = instructions_by_query_id or {}
-    return [
-        QueryRecord(
-            query_id=str(row["_id"]),
-            text=str(row["text"]),
-            metadata={"instruction": instructions[str(row["_id"])]}
-            if str(row["_id"]) in instructions
-            else {},
+    queries: list[QueryRecord] = []
+    for row in query_rows:
+        query_id = str(row["_id"])
+        source_query_text = str(row["text"])
+        instruction = instructions.get(query_id)
+        if query_text_policy is None:
+            queries.append(
+                QueryRecord(
+                    query_id=query_id,
+                    text=source_query_text,
+                    metadata={"instruction": instruction} if instruction is not None else {},
+                )
+            )
+            continue
+
+        if instruction is None:
+            raise RawNormalizeError(
+                f"Missing instruction for IFIR query_id={query_id!r}"
+            )
+
+        effective_query_text, instruction_startswith_query_text = (
+            _build_ifir_effective_query_text(
+                query_id=query_id,
+                source_query_text=source_query_text,
+                instruction=instruction,
+                query_text_policy=query_text_policy,
+            )
         )
-        for row in query_rows
-    ]
+        queries.append(
+            QueryRecord(
+                query_id=query_id,
+                text=effective_query_text,
+                metadata={
+                    "source_query_text": source_query_text,
+                    "instruction": instruction,
+                    "effective_query_text": effective_query_text,
+                    "query_text_policy": query_text_policy,
+                    "instruction_startswith_query_text": instruction_startswith_query_text,
+                },
+            )
+        )
+    return queries
+
+
+def _build_ifir_effective_query_text(
+    *,
+    query_id: str,
+    source_query_text: str,
+    instruction: str,
+    query_text_policy: IFIRQueryTextPolicy,
+) -> tuple[str, bool]:
+    instruction_startswith_query_text = instruction.startswith(source_query_text)
+    if (
+        query_text_policy == IFIR_ORIGINAL_QUERY_PLUS_INSTRUCTION_ONCE_POLICY
+        and instruction_startswith_query_text
+    ):
+        raise RawNormalizeError(
+            "IFIR original-query policy received an instruction that already starts "
+            f"with the query text for query_id={query_id!r}"
+        )
+    if query_text_policy in {
+        IFIR_MTEB_TEXT_PLUS_INSTRUCTION_POLICY,
+        IFIR_ORIGINAL_QUERY_PLUS_INSTRUCTION_ONCE_POLICY,
+    }:
+        return (
+            f"{source_query_text} {instruction}",
+            instruction_startswith_query_text,
+        )
+    raise RawNormalizeError(f"Unsupported IFIR query_text_policy: {query_text_policy!r}")
 
 
 def _rows_to_qrels(qrel_rows: list[dict[str, Any]]) -> list[QrelRecord]:
@@ -343,10 +416,32 @@ def _load_jsonl_tsv_dataset(
         for row in instruction_rows
     }
 
+    queries = _rows_to_queries(
+        query_rows,
+        instructions_by_query_id=instructions_by_query_id,
+        query_text_policy=spec.query_text_policy,
+    )
+    metadata: dict[str, Any] = {}
+    if spec.query_text_policy is not None:
+        metadata.update(
+            {
+                "has_instructions": True,
+                "query_text_policy": spec.query_text_policy,
+                "effective_query_text_field": "text",
+                "source_query_text_metadata_key": "source_query_text",
+                "instruction_startswith_query_text_count": sum(
+                    1
+                    for query in queries
+                    if query.metadata.get("instruction_startswith_query_text") is True
+                ),
+            }
+        )
+
     return NormalizedDataset(
         corpus=_rows_to_corpus(corpus_rows),
-        queries=_rows_to_queries(query_rows, instructions_by_query_id=instructions_by_query_id),
+        queries=queries,
         qrels=_rows_to_qrels(qrel_rows),
+        metadata=metadata,
     )
 
 
@@ -553,6 +648,13 @@ def normalize_raw_dataset_artifact(
 
     normalized_metadata: dict[str, Any] = {}
     normalized_metadata.update(config.metadata)
+    normalizer_params: dict[str, Any] = {
+        "split": config.split,
+        "raw_format": spec.raw_format,
+        "has_instructions": spec.has_instructions,
+    }
+    if spec.query_text_policy is not None:
+        normalizer_params["query_text_policy"] = spec.query_text_policy
     normalized_metadata.update(
         {
             "source": "raw_dataset",
@@ -560,11 +662,7 @@ def normalize_raw_dataset_artifact(
             "split": config.split,
             "normalizer_name": spec.normalizer_name,
             "normalizer_version": "1",
-            "normalizer_params": {
-                "split": config.split,
-                "raw_format": spec.raw_format,
-                "has_instructions": spec.has_instructions,
-            },
+            "normalizer_params": normalizer_params,
             "raw_format": spec.raw_format,
             "has_instructions": spec.has_instructions,
             "raw_dataset_artifact_id": config.source_artifact_id,
@@ -578,6 +676,18 @@ def normalize_raw_dataset_artifact(
             "normalized_schema_version": _NORMALIZED_SCHEMA_VERSION,
         }
     )
+    if spec.query_text_policy is not None:
+        normalized_metadata.update(
+            {
+                "query_text_policy": spec.query_text_policy,
+                "effective_query_text_field": "text",
+                "source_query_text_metadata_key": "source_query_text",
+                "instruction_startswith_query_text_count": dataset.metadata.get(
+                    "instruction_startswith_query_text_count",
+                    0,
+                ),
+            }
+        )
     dataset.metadata.update(normalized_metadata)
 
     return write_normalized_dataset_artifact(

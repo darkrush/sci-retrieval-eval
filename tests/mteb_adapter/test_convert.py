@@ -86,6 +86,32 @@ def test_query_dict_uses_text_field() -> None:
     assert dataset.queries[0].metadata == {"lang": "en"}
 
 
+def test_ifir_query_from_mteb_loader_is_not_combined_again() -> None:
+    dataset = convert_retrieval_data_to_normalized_dataset(
+        corpus={"doc-1": "text"},
+        queries={
+            "q-1": {
+                "text": "Q Q I",
+                "instruction": "Q I",
+                "source_query_text": "Q",
+            }
+        },
+        qrels={"q-1": {"doc-1": 1}},
+        metadata={
+            "source": "mteb",
+            "task_name": "IFIRNFCorpus",
+            "query_text_policy": "mteb_loader_effective_text",
+        },
+    )
+
+    assert dataset.queries[0].text == "Q Q I"
+    assert dataset.queries[0].metadata == {
+        "instruction": "Q I",
+        "source_query_text": "Q",
+    }
+    assert dataset.metadata["query_text_policy"] == "mteb_loader_effective_text"
+
+
 def test_query_dict_uses_query_field_when_text_missing() -> None:
     dataset = convert_retrieval_data_to_normalized_dataset(
         corpus={"doc-1": "text"},

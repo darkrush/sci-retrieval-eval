@@ -79,13 +79,16 @@ def _jsonl_tsv_snapshot(
     dataset_name: str = "IFIRNFCorpus",
     slug: str = "ifir_nfcorpus",
     has_instructions: bool = True,
+    queries_payload: bytes | None = None,
+    instructions_payload: bytes | None = None,
 ) -> tuple[RawDatasetSnapshot, FakeRawFileOpener]:
     uris_to_payloads = {
         f"s3://bucket/raw/{slug}/corpus.jsonl": (
             b'{"_id":"d1","title":"Title 1","text":"Doc 1"}\n'
             b'{"_id":"d2","title":"Title 2","text":"Doc 2"}\n'
         ),
-        f"s3://bucket/raw/{slug}/queries.jsonl": (
+        f"s3://bucket/raw/{slug}/queries.jsonl": queries_payload
+        or (
             b'{"_id":"q1","text":"Query 1"}\n'
             b'{"_id":"q2","text":"Query 2"}\n'
         ),
@@ -97,6 +100,8 @@ def _jsonl_tsv_snapshot(
     }
     if has_instructions:
         uris_to_payloads[f"s3://bucket/raw/{slug}/instructions.jsonl"] = (
+            instructions_payload
+            or
             b'{"query-id":"q1","instruction":"Instruction 1"}\n'
             b'{"query-id":"q2","instruction":"Instruction 2"}\n'
         )
@@ -198,7 +203,12 @@ def test_normalize_raw_dataset_artifact_ifir_nfcorpus(
     assert len(loaded.corpus) == 2
     assert len(loaded.queries) == 2
     assert len(loaded.qrels) == 2
+    assert loaded.queries[0].text == "Query 1 Instruction 1"
+    assert loaded.queries[0].metadata["source_query_text"] == "Query 1"
     assert loaded.queries[0].metadata["instruction"] == "Instruction 1"
+    assert loaded.queries[0].metadata["effective_query_text"] == "Query 1 Instruction 1"
+    assert loaded.queries[0].metadata["query_text_policy"] == "mteb_text_plus_instruction"
+    assert loaded.queries[0].metadata["instruction_startswith_query_text"] is False
     assert loaded.qrels[1].relevance == 2.0
     assert manifest.dependencies[0].artifact_type == RAW_DATASET_ARTIFACT_TYPE
     assert manifest.dependencies[0].artifact_id == "raw_ifir_nfcorpus_001"
@@ -208,6 +218,10 @@ def test_normalize_raw_dataset_artifact_ifir_nfcorpus(
     assert manifest.metadata["normalizer_name"] == "ifir_nfcorpus_raw_jsonl_tsv_v1"
     assert manifest.metadata["raw_format"] == "jsonl_tsv"
     assert manifest.metadata["has_instructions"] is True
+    assert manifest.metadata["query_text_policy"] == "mteb_text_plus_instruction"
+    assert manifest.metadata["effective_query_text_field"] == "text"
+    assert manifest.metadata["source_query_text_metadata_key"] == "source_query_text"
+    assert manifest.metadata["instruction_startswith_query_text_count"] == 0
     assert manifest.metadata["corpus_count"] == 2
     assert manifest.metadata["query_count"] == 2
     assert manifest.metadata["qrel_count"] == 2
@@ -216,6 +230,68 @@ def test_normalize_raw_dataset_artifact_ifir_nfcorpus(
     assert manifest.metadata["raw_source_uri"] == "s3://bucket/raw/ifir_nfcorpus"
     assert manifest.metadata["normalized_schema_version"] == "1"
     assert manifest.metadata["note"] == "smoke"
+
+
+def test_normalize_ifir_nfcorpus_mteb_policy_keeps_query_repetition(
+    store: LocalArtifactStore,
+) -> None:
+    snapshot, opener = _jsonl_tsv_snapshot(
+        dataset_name="IFIRNFCorpus",
+        slug="ifir_nfcorpus",
+        queries_payload=b'{"_id":"q1","text":"Q"}\n',
+        instructions_payload=b'{"query-id":"q1","instruction":"Q I"}\n',
+    )
+    write_raw_dataset_artifact(store, "raw_ifir_nfcorpus_001", snapshot)
+
+    manifest = normalize_raw_dataset_artifact(
+        store,
+        store,
+        RawToNormalizedConfig(
+            source_artifact_id="raw_ifir_nfcorpus_001",
+            output_artifact_id="normalized_ifir_nfcorpus_001",
+            dataset_name="IFIRNFCorpus",
+        ),
+        opener=opener,
+    )
+    loaded = read_normalized_dataset_artifact(store, "normalized_ifir_nfcorpus_001")
+
+    assert loaded.queries[0].text == "Q Q I"
+    assert loaded.queries[0].metadata == {
+        "source_query_text": "Q",
+        "instruction": "Q I",
+        "effective_query_text": "Q Q I",
+        "query_text_policy": "mteb_text_plus_instruction",
+        "instruction_startswith_query_text": True,
+    }
+    assert manifest.metadata["query_text_policy"] == "mteb_text_plus_instruction"
+    assert manifest.metadata["instruction_startswith_query_text_count"] == 1
+
+
+def test_normalize_ifir_scifact_uses_mteb_policy(
+    store: LocalArtifactStore,
+) -> None:
+    snapshot, opener = _jsonl_tsv_snapshot(
+        dataset_name="IFIRScifact",
+        slug="ifir_scifact",
+        queries_payload=b'{"_id":"q1","text":"Q"}\n',
+        instructions_payload=b'{"query-id":"q1","instruction":"Q I"}\n',
+    )
+    write_raw_dataset_artifact(store, "raw_ifir_scifact_001", snapshot)
+
+    normalize_raw_dataset_artifact(
+        store,
+        store,
+        RawToNormalizedConfig(
+            source_artifact_id="raw_ifir_scifact_001",
+            output_artifact_id="normalized_ifir_scifact_001",
+            dataset_name="IFIRScifact",
+        ),
+        opener=opener,
+    )
+    loaded = read_normalized_dataset_artifact(store, "normalized_ifir_scifact_001")
+
+    assert loaded.queries[0].text == "Q Q I"
+    assert loaded.queries[0].metadata["query_text_policy"] == "mteb_text_plus_instruction"
 
 
 @pytest.mark.parametrize(
@@ -260,9 +336,112 @@ def test_normalize_jsonl_tsv_raw_datasets(
     assert manifest.metadata["raw_format"] == "jsonl_tsv"
     assert manifest.metadata["has_instructions"] is has_instructions
     if has_instructions:
+        assert loaded.queries[0].text == "Query 1 Instruction 1"
         assert loaded.queries[0].metadata["instruction"] == "Instruction 1"
+        assert loaded.queries[0].metadata["source_query_text"] == "Query 1"
+        assert manifest.metadata["query_text_policy"] == "mteb_text_plus_instruction"
     else:
+        assert loaded.queries[0].text == "Query 1"
         assert loaded.queries[0].metadata == {}
+        assert "query_text_policy" not in manifest.metadata
+        assert "effective_query_text_field" not in manifest.metadata
+        assert "instruction_startswith_query_text_count" not in manifest.metadata
+
+
+def test_original_ifir_policy_builds_query_plus_instruction_once(
+    store: LocalArtifactStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spec = raw_normalize_module.RawNormalizerSpec(
+        dataset_name="IFIROriginal",
+        normalizer_name="ifir_original_raw_jsonl_tsv_v1",
+        raw_format="jsonl_tsv",
+        has_instructions=True,
+        query_text_policy="ifir_original_query_plus_instruction_once",
+    )
+    monkeypatch.setitem(raw_normalize_module.RAW_NORMALIZER_SPECS, "IFIROriginal", spec)
+    snapshot, opener = _jsonl_tsv_snapshot(
+        dataset_name="IFIROriginal",
+        slug="ifir_original",
+        queries_payload=b'{"_id":"q1","text":"Q"}\n',
+        instructions_payload=b'{"query-id":"q1","instruction":"I"}\n',
+    )
+    write_raw_dataset_artifact(store, "raw_ifir_original_001", snapshot)
+
+    manifest = normalize_raw_dataset_artifact(
+        store,
+        store,
+        RawToNormalizedConfig(
+            source_artifact_id="raw_ifir_original_001",
+            output_artifact_id="normalized_ifir_original_001",
+            dataset_name="IFIROriginal",
+        ),
+        opener=opener,
+    )
+    loaded = read_normalized_dataset_artifact(store, "normalized_ifir_original_001")
+
+    assert loaded.queries[0].text == "Q I"
+    assert loaded.queries[0].metadata["query_text_policy"] == (
+        "ifir_original_query_plus_instruction_once"
+    )
+    assert loaded.queries[0].metadata["instruction_startswith_query_text"] is False
+    assert manifest.metadata["query_text_policy"] == "ifir_original_query_plus_instruction_once"
+
+
+def test_original_ifir_policy_rejects_instruction_that_already_starts_with_query(
+    store: LocalArtifactStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spec = raw_normalize_module.RawNormalizerSpec(
+        dataset_name="IFIROriginal",
+        normalizer_name="ifir_original_raw_jsonl_tsv_v1",
+        raw_format="jsonl_tsv",
+        has_instructions=True,
+        query_text_policy="ifir_original_query_plus_instruction_once",
+    )
+    monkeypatch.setitem(raw_normalize_module.RAW_NORMALIZER_SPECS, "IFIROriginal", spec)
+    snapshot, opener = _jsonl_tsv_snapshot(
+        dataset_name="IFIROriginal",
+        slug="ifir_original",
+        queries_payload=b'{"_id":"q1","text":"Q"}\n',
+        instructions_payload=b'{"query-id":"q1","instruction":"Q I"}\n',
+    )
+    write_raw_dataset_artifact(store, "raw_ifir_original_001", snapshot)
+
+    with pytest.raises(RawNormalizeError, match="already starts with the query text"):
+        normalize_raw_dataset_artifact(
+            store,
+            store,
+            RawToNormalizedConfig(
+                source_artifact_id="raw_ifir_original_001",
+                output_artifact_id="normalized_ifir_original_001",
+                dataset_name="IFIROriginal",
+            ),
+            opener=opener,
+        )
+
+
+def test_ifir_policy_rejects_missing_instruction(
+    store: LocalArtifactStore,
+) -> None:
+    snapshot, opener = _jsonl_tsv_snapshot(
+        dataset_name="IFIRNFCorpus",
+        slug="ifir_nfcorpus",
+        instructions_payload=b'{"query-id":"q1","instruction":"Instruction 1"}\n',
+    )
+    write_raw_dataset_artifact(store, "raw_ifir_nfcorpus_001", snapshot)
+
+    with pytest.raises(RawNormalizeError, match="Missing instruction"):
+        normalize_raw_dataset_artifact(
+            store,
+            store,
+            RawToNormalizedConfig(
+                source_artifact_id="raw_ifir_nfcorpus_001",
+                output_artifact_id="normalized_ifir_nfcorpus_001",
+                dataset_name="IFIRNFCorpus",
+            ),
+            opener=opener,
+        )
 
 
 def test_normalize_raw_dataset_artifact_streams_corpus_jsonl(
