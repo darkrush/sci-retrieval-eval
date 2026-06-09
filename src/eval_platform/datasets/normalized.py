@@ -1,5 +1,6 @@
 """Normalized dataset artifact read/write helpers."""
 
+import hashlib
 from datetime import UTC, datetime
 from typing import Any
 
@@ -7,6 +8,7 @@ from eval_platform.artifacts.manifest import ArtifactDependency, ArtifactFile, A
 from eval_platform.artifacts.metadata_keys import (
     METADATA_KEY_ASSET_FINGERPRINT,
     METADATA_KEY_ASSET_FINGERPRINT_SHA256,
+    METADATA_KEY_CORPUS_FINGERPRINT_SHA256,
 )
 from eval_platform.artifacts.store import ArtifactIncompleteError, ArtifactStore
 from eval_platform.artifacts.types import NORMALIZED_DATASET_ARTIFACT_TYPE
@@ -31,6 +33,7 @@ _SYSTEM_METADATA_FIELDS = {
     "qrel_count",
     METADATA_KEY_ASSET_FINGERPRINT,
     METADATA_KEY_ASSET_FINGERPRINT_SHA256,
+    METADATA_KEY_CORPUS_FINGERPRINT_SHA256,
 }
 
 
@@ -68,6 +71,9 @@ def write_normalized_dataset_artifact(
             "corpus_count": len(dataset.corpus),
             "query_count": len(dataset.queries),
             "qrel_count": len(dataset.qrels),
+            METADATA_KEY_CORPUS_FINGERPRINT_SHA256: hashlib.sha256(
+                corpus_bytes
+            ).hexdigest(),
         }
     )
     add_asset_fingerprint_metadata(

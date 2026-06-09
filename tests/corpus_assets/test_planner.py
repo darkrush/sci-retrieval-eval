@@ -454,6 +454,204 @@ def test_reuse_existing_rebuilds_embedding_dependents_when_expected_fingerprint_
     )
 
 
+def test_reuse_existing_reuses_downstream_when_normalized_query_only_changes() -> None:
+    spec = DATASETS_BY_NAME["IFIRScifact"]
+    inventory: dict[str, Any] = {
+        "datasets": {
+            "IFIRScifact": {
+                "artifacts": {
+                    "raw_dataset": [_complete_record("raw", metadata=_fp("raw-fp"))],
+                    "normalized_dataset": [
+                        _complete_record(
+                            "old_normalized",
+                            dependencies=[("raw_dataset", "raw")],
+                            metadata={
+                                **_fp("old-normalized-fp"),
+                                "corpus_fingerprint_sha256": "corpus-fp",
+                            },
+                        )
+                    ],
+                    "chunked_corpus": [
+                        _complete_record(
+                            "old_chunks",
+                            dependencies=[
+                                ("normalized_dataset", "old_normalized")
+                            ],
+                            metadata=_fp("chunks-fp"),
+                        )
+                    ],
+                    "embeddings": [
+                        _complete_record(
+                            "old_embeddings",
+                            dependencies=[("chunked_corpus", "old_chunks")],
+                            metadata=_fp("embeddings-fp"),
+                        )
+                    ],
+                    "elasticsearch_index": [
+                        _complete_record(
+                            "old_es",
+                            dependencies=[("chunked_corpus", "old_chunks")],
+                            metadata={**_fp("es-fp"), "index_name": "real_es"},
+                        )
+                    ],
+                    "milvus_collection": [
+                        _complete_record(
+                            "old_milvus",
+                            dependencies=[
+                                ("chunked_corpus", "old_chunks"),
+                                ("embeddings", "old_embeddings"),
+                            ],
+                            metadata={
+                                **_fp("milvus-fp"),
+                                "collection_name": "real_milvus",
+                            },
+                        )
+                    ],
+                }
+            }
+        }
+    }
+
+    plan = build_plan_for_datasets(
+        datasets=[spec],
+        run_id="query_only",
+        bucket="bucket",
+        raw_prefix="sciverse_benchmark/raw",
+        s3_prefix="test_sciverse_benchmark",
+        raw_exists_by_slug={"ifir_scifact": True},
+        reuse_existing=True,
+        inventory=inventory,
+        expected_asset_fingerprints_by_slug={
+            "ifir_scifact": {
+                "raw_dataset": "raw-fp",
+                "normalized_dataset": "new-normalized-fp",
+                "corpus_fingerprint_sha256": "corpus-fp",
+                "chunked_corpus": "chunks-fp",
+                "embeddings": "embeddings-fp",
+                "elasticsearch_index": "es-fp",
+                "milvus_collection": "milvus-fp",
+            }
+        },
+    )
+
+    steps = plan["datasets"]["IFIRScifact"]["steps"]
+    assert [step["action"] for step in steps] == [
+        "reuse",
+        "create",
+        "reuse",
+        "reuse",
+        "reuse",
+        "reuse",
+    ]
+    assert steps[2]["artifact_id"] == "old_chunks"
+    assert steps[2]["source_artifact_id"] == "old_normalized"
+    assert steps[3]["artifact_id"] == "old_embeddings"
+    assert steps[3]["source_artifact_id"] == "old_chunks"
+    assert steps[4]["source_artifact_id"] == "old_chunks"
+    assert steps[5]["chunked_corpus_artifact_id"] == "old_chunks"
+    assert steps[5]["embeddings_artifact_id"] == "old_embeddings"
+
+
+@pytest.mark.parametrize(
+    "normalized_metadata",
+    [
+        {"asset_fingerprint_sha256": "old-normalized-fp"},
+        {
+            "asset_fingerprint_sha256": "old-normalized-fp",
+            "corpus_fingerprint_sha256": "different-corpus-fp",
+        },
+    ],
+)
+def test_reuse_existing_does_not_cross_normalized_without_matching_corpus_fingerprint(
+    normalized_metadata: dict[str, str],
+) -> None:
+    spec = DATASETS_BY_NAME["IFIRScifact"]
+    inventory: dict[str, Any] = {
+        "datasets": {
+            "IFIRScifact": {
+                "artifacts": {
+                    "raw_dataset": [_complete_record("raw", metadata=_fp("raw-fp"))],
+                    "normalized_dataset": [
+                        _complete_record(
+                            "old_normalized",
+                            dependencies=[("raw_dataset", "raw")],
+                            metadata=normalized_metadata,
+                        )
+                    ],
+                    "chunked_corpus": [
+                        _complete_record(
+                            "old_chunks",
+                            dependencies=[
+                                ("normalized_dataset", "old_normalized")
+                            ],
+                            metadata=_fp("chunks-fp"),
+                        )
+                    ],
+                    "embeddings": [
+                        _complete_record(
+                            "old_embeddings",
+                            dependencies=[("chunked_corpus", "old_chunks")],
+                            metadata=_fp("embeddings-fp"),
+                        )
+                    ],
+                    "elasticsearch_index": [
+                        _complete_record(
+                            "old_es",
+                            dependencies=[("chunked_corpus", "old_chunks")],
+                            metadata={**_fp("es-fp"), "index_name": "real_es"},
+                        )
+                    ],
+                    "milvus_collection": [
+                        _complete_record(
+                            "old_milvus",
+                            dependencies=[
+                                ("chunked_corpus", "old_chunks"),
+                                ("embeddings", "old_embeddings"),
+                            ],
+                            metadata={
+                                **_fp("milvus-fp"),
+                                "collection_name": "real_milvus",
+                            },
+                        )
+                    ],
+                }
+            }
+        }
+    }
+
+    plan = build_plan_for_datasets(
+        datasets=[spec],
+        run_id="query_only",
+        bucket="bucket",
+        raw_prefix="sciverse_benchmark/raw",
+        s3_prefix="test_sciverse_benchmark",
+        raw_exists_by_slug={"ifir_scifact": True},
+        reuse_existing=True,
+        inventory=inventory,
+        expected_asset_fingerprints_by_slug={
+            "ifir_scifact": {
+                "raw_dataset": "raw-fp",
+                "normalized_dataset": "new-normalized-fp",
+                "corpus_fingerprint_sha256": "corpus-fp",
+                "chunked_corpus": "chunks-fp",
+                "embeddings": "embeddings-fp",
+                "elasticsearch_index": "es-fp",
+                "milvus_collection": "milvus-fp",
+            }
+        },
+    )
+
+    steps = plan["datasets"]["IFIRScifact"]["steps"]
+    assert [step["action"] for step in steps] == [
+        "reuse",
+        "create",
+        "create",
+        "create",
+        "create",
+        "create",
+    ]
+
+
 def test_reused_index_steps_use_manifest_dependencies() -> None:
     spec = DATASETS_BY_NAME["SciFact"]
     inventory: dict[str, Any] = {

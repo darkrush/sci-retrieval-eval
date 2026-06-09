@@ -11,6 +11,7 @@ from eval_platform.artifacts import (
     ArtifactManifest,
     LocalArtifactStore,
 )
+from eval_platform.artifacts.metadata_keys import METADATA_KEY_CORPUS_FINGERPRINT_SHA256
 from eval_platform.datasets import (
     CORPUS_FILENAME,
     NORMALIZED_DATASET_ARTIFACT_TYPE,
@@ -82,6 +83,42 @@ def test_manifest_metadata_contains_counts(store: LocalArtifactStore) -> None:
     assert manifest.metadata["query_count"] == 1
     assert manifest.metadata["qrel_count"] == 1
     assert manifest.metadata["source"] == "unit-test"
+
+
+def test_manifest_metadata_contains_corpus_fingerprint(store: LocalArtifactStore) -> None:
+    first = write_normalized_dataset_artifact(
+        store,
+        "sample_001",
+        _sample_dataset(),
+    )
+    query_changed = NormalizedDataset(
+        corpus=_sample_dataset().corpus,
+        queries=[QueryRecord(query_id="q-1", text="changed query text")],
+        qrels=[QrelRecord(query_id="q-1", doc_id="doc-2", relevance=1.0)],
+    )
+    second = write_normalized_dataset_artifact(
+        store,
+        "sample_002",
+        query_changed,
+    )
+    corpus_changed = NormalizedDataset(
+        corpus=[CorpusRecord(doc_id="doc-1", text="changed corpus text")],
+        queries=query_changed.queries,
+        qrels=query_changed.qrels,
+    )
+    third = write_normalized_dataset_artifact(
+        store,
+        "sample_003",
+        corpus_changed,
+    )
+
+    assert first.metadata[METADATA_KEY_CORPUS_FINGERPRINT_SHA256]
+    assert first.metadata[METADATA_KEY_CORPUS_FINGERPRINT_SHA256] == (
+        second.metadata[METADATA_KEY_CORPUS_FINGERPRINT_SHA256]
+    )
+    assert first.metadata[METADATA_KEY_CORPUS_FINGERPRINT_SHA256] != (
+        third.metadata[METADATA_KEY_CORPUS_FINGERPRINT_SHA256]
+    )
 
 
 def test_manifest_count_metadata_is_not_overridden_by_user_metadata(

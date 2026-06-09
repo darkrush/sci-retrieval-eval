@@ -9,6 +9,10 @@ import pytest
 
 import eval_platform.datasets.raw_normalize as raw_normalize_module
 from eval_platform.artifacts import LocalArtifactStore
+from eval_platform.artifacts.metadata_keys import (
+    METADATA_KEY_ASSET_FINGERPRINT_SHA256,
+    METADATA_KEY_CORPUS_FINGERPRINT_SHA256,
+)
 from eval_platform.chunking.progress import ProgressEvent
 from eval_platform.datasets import (
     NORMALIZED_DATASET_ARTIFACT_TYPE,
@@ -292,6 +296,58 @@ def test_normalize_ifir_scifact_uses_mteb_policy(
 
     assert loaded.queries[0].text == "Q Q I"
     assert loaded.queries[0].metadata["query_text_policy"] == "mteb_text_plus_instruction"
+
+
+def test_ifir_query_policy_change_does_not_change_corpus_fingerprint(
+    store: LocalArtifactStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot, opener = _jsonl_tsv_snapshot(
+        dataset_name="IFIRScifact",
+        slug="ifir_scifact",
+        queries_payload=b'{"_id":"q1","text":"Q"}\n',
+        instructions_payload=b'{"query-id":"q1","instruction":"I"}\n',
+    )
+    write_raw_dataset_artifact(store, "raw_ifir_scifact_001", snapshot)
+
+    mteb_manifest = normalize_raw_dataset_artifact(
+        store,
+        store,
+        RawToNormalizedConfig(
+            source_artifact_id="raw_ifir_scifact_001",
+            output_artifact_id="normalized_ifir_scifact_mteb",
+            dataset_name="IFIRScifact",
+        ),
+        opener=opener,
+    )
+    monkeypatch.setitem(
+        raw_normalize_module.RAW_NORMALIZER_SPECS,
+        "IFIRScifact",
+        raw_normalize_module.RawNormalizerSpec(
+            dataset_name="IFIRScifact",
+            normalizer_name="ifir_scifact_raw_jsonl_tsv_v1",
+            raw_format="jsonl_tsv",
+            has_instructions=False,
+            query_text_policy=None,
+        ),
+    )
+    no_policy_manifest = normalize_raw_dataset_artifact(
+        store,
+        store,
+        RawToNormalizedConfig(
+            source_artifact_id="raw_ifir_scifact_001",
+            output_artifact_id="normalized_ifir_scifact_no_policy",
+            dataset_name="IFIRScifact",
+        ),
+        opener=opener,
+    )
+
+    assert mteb_manifest.metadata[METADATA_KEY_ASSET_FINGERPRINT_SHA256] != (
+        no_policy_manifest.metadata[METADATA_KEY_ASSET_FINGERPRINT_SHA256]
+    )
+    assert mteb_manifest.metadata[METADATA_KEY_CORPUS_FINGERPRINT_SHA256] == (
+        no_policy_manifest.metadata[METADATA_KEY_CORPUS_FINGERPRINT_SHA256]
+    )
 
 
 @pytest.mark.parametrize(
