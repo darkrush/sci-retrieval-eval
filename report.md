@@ -8,7 +8,7 @@
 - 当前分支：`feat/ifir-scifact-corpus-executor`
 - 基线：`origin/main` / `4e03932 Add IFIRNFCorpus corpus asset executor (#56)`
 - 完成时间：2026-06-09
-- 实现提交 SHA：待提交后补充
+- 实现提交 SHA：`6a13231 Reuse corpus assets across query-only normalized changes`
 
 ## 2. 实现摘要
 
