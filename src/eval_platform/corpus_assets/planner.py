@@ -428,7 +428,14 @@ def _trim_chain_for_expected_normalized(
         return _raw_only_chain(chain)
 
     trimmed = dict(chain)
-    trimmed.pop(NORMALIZED_DATASET_ARTIFACT_TYPE, None)
+    expected_normalized_id = _expected_normalized_artifact_id(
+        records_by_id,
+        expected_normalized_fingerprint,
+    )
+    if expected_normalized_id is not None:
+        trimmed[NORMALIZED_DATASET_ARTIFACT_TYPE] = expected_normalized_id
+    else:
+        trimmed.pop(NORMALIZED_DATASET_ARTIFACT_TYPE, None)
     return trimmed
 
 
@@ -465,6 +472,19 @@ def _expected_normalized_corpus_fingerprint(
     for record in records_by_id.get(NORMALIZED_DATASET_ARTIFACT_TYPE, {}).values():
         if _record_asset_fingerprint_sha256(record) == expected_normalized_fingerprint:
             return _record_corpus_fingerprint_sha256(record)
+    return None
+
+
+def _expected_normalized_artifact_id(
+    records_by_id: dict[str, dict[str, dict[str, Any]]],
+    expected_normalized_fingerprint: str,
+) -> str | None:
+    for artifact_id, record in records_by_id.get(
+        NORMALIZED_DATASET_ARTIFACT_TYPE,
+        {},
+    ).items():
+        if _record_asset_fingerprint_sha256(record) == expected_normalized_fingerprint:
+            return artifact_id
     return None
 
 
