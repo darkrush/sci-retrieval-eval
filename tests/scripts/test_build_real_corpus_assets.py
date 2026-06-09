@@ -27,6 +27,7 @@ def test_build_script_run_delegates_to_corpus_asset_modules(
     store = object()
     spec = SimpleNamespace(slug="ifir_nfcorpus")
     captured: dict[str, Any] = {}
+    plan_kwargs: dict[str, Any] = {}
 
     monkeypatch.setattr(
         build_script,
@@ -54,8 +55,16 @@ def test_build_script_run_delegates_to_corpus_asset_modules(
     monkeypatch.setattr(build_script, "raw_prefix_exists", lambda *args, **kwargs: True)
     monkeypatch.setattr(
         build_script,
+        "build_expected_asset_fingerprints_by_slug",
+        lambda **kwargs: {"ifir_nfcorpus": {"normalized_dataset": "expected-fp"}},
+    )
+    monkeypatch.setattr(
+        build_script,
         "build_plan_for_datasets",
-        lambda **kwargs: {"mode": "dry_run", "datasets": {"IFIRNFCorpus": {}}},
+        lambda **kwargs: (
+            plan_kwargs.update(kwargs)
+            or {"mode": "dry_run", "datasets": {"IFIRNFCorpus": {}}}
+        ),
     )
     monkeypatch.setattr(build_script, "redacted_config_summary", lambda config: {"safe": True})
     monkeypatch.setattr(
@@ -83,6 +92,9 @@ def test_build_script_run_delegates_to_corpus_asset_modules(
     assert payload["config"] == {"safe": True}
     assert payload["inventory"] == {"datasets": {"IFIRNFCorpus": {}}}
     assert captured["payload"] == payload
+    assert plan_kwargs["expected_asset_fingerprints_by_slug"] == {
+        "ifir_nfcorpus": {"normalized_dataset": "expected-fp"}
+    }
 
 
 def test_build_script_refuses_execute() -> None:
