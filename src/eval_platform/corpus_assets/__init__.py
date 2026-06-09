@@ -1,5 +1,8 @@
 """Corpus asset inventory and planning helpers."""
 
+from eval_platform.corpus_assets.expected_fingerprints import (
+    build_expected_asset_fingerprints_by_slug,
+)
 from eval_platform.corpus_assets.inventory import inventory_corpus_assets
 from eval_platform.corpus_assets.naming import (
     ARTIFACT_STAGE_ORDER,
@@ -42,6 +45,7 @@ __all__ = [
     "add_common_args",
     "artifact_ids_for_dataset",
     "build_plan_for_datasets",
+    "build_expected_asset_fingerprints_by_slug",
     "collection_name_for_dataset",
     "dataset_specs_for_selection",
     "index_name_for_dataset",

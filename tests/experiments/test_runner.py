@@ -249,6 +249,13 @@ def test_run_experiment_creates_missing_from_corpus_asset_selection(
                 dataset_selection="IFIRNFCorpus",
                 corpus_run_id=run_id,
                 bucket="scibase-service",
+                expected_asset_fingerprints_by_slug={
+                    "ifir_nfcorpus": _expected_corpus_asset_fingerprints(
+                        store,
+                        slug="ifir_nfcorpus",
+                        run_id=run_id,
+                    )
+                },
             ),
             settings=settings_for_selection("E2-es"),
             metrics_k_values=[1, 10],
@@ -351,6 +358,14 @@ def test_plan_experiment_resolves_real_five_dataset_corpus_assets(
                 bucket="scibase-service",
                 raw_prefix="sciverse_benchmark/raw",
                 s3_prefix="sciverse_benchmark/assets",
+                expected_asset_fingerprints_by_slug={
+                    slug: _expected_corpus_asset_fingerprints(
+                        store,
+                        slug=slug,
+                        run_id=run_id,
+                    )
+                    for slug, _task_name in _real_five_dataset_rows()
+                },
             ),
             settings=settings_for_selection(),
             query_limit=3,
@@ -641,6 +656,29 @@ def _write_asset_manifest(
     )
     store.write_manifest(artifact_type, artifact_id, manifest)
     store.mark_success(artifact_type, artifact_id)
+
+
+def _expected_corpus_asset_fingerprints(
+    store: LocalArtifactStore,
+    *,
+    slug: str,
+    run_id: str,
+) -> dict[str, str]:
+    return {
+        artifact_type: str(
+            store.read_manifest(artifact_type, artifact_id).metadata[
+                "asset_fingerprint_sha256"
+            ]
+        )
+        for artifact_type, artifact_id in {
+            RAW_DATASET_ARTIFACT_TYPE: f"{slug}_{run_id}_raw",
+            NORMALIZED_DATASET_ARTIFACT_TYPE: f"{slug}_{run_id}_normalized",
+            CHUNKED_CORPUS_ARTIFACT_TYPE: f"{slug}_{run_id}_chunks",
+            EMBEDDINGS_ARTIFACT_TYPE: f"{slug}_{run_id}_embeddings",
+            ELASTICSEARCH_INDEX_ARTIFACT_TYPE: f"{slug}_{run_id}_es_index",
+            MILVUS_COLLECTION_ARTIFACT_TYPE: f"{slug}_{run_id}_milvus_collection",
+        }.items()
+    }
 
 
 def _write_real_corpus_asset_chain(

@@ -16,6 +16,7 @@ if str(SRC_ROOT) not in sys.path:
 from eval_platform.corpus_assets import (  # noqa: E402
     CorpusAssetError,
     add_common_args,
+    build_expected_asset_fingerprints_by_slug,
     build_plan_for_datasets,
     dataset_specs_for_selection,
     inventory_corpus_assets,
@@ -72,6 +73,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         raw_prefix=args.raw_prefix,
         datasets=datasets,
     )
+    expected_asset_fingerprints_by_slug = (
+        build_expected_asset_fingerprints_by_slug(
+            config=config,
+            datasets=datasets,
+            inventory=inventory,
+        )
+        if args.reuse_existing
+        else {}
+    )
     raw_exists_by_slug = {
         spec.slug: raw_prefix_exists(
             client,
@@ -89,6 +99,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         raw_exists_by_slug=raw_exists_by_slug,
         reuse_existing=args.reuse_existing,
         inventory=inventory,
+        expected_asset_fingerprints_by_slug=expected_asset_fingerprints_by_slug,
     )
     payload = {
         "kind": "five_dataset_corpus_asset_build_plan",

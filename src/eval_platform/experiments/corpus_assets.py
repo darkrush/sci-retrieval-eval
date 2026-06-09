@@ -12,6 +12,7 @@ from eval_platform.artifacts.types import (
 )
 from eval_platform.benchmark import BenchmarkDatasetSpec
 from eval_platform.corpus_assets import (
+    build_expected_asset_fingerprints_by_slug,
     build_plan_for_datasets,
     dataset_specs_for_selection,
     inventory_corpus_assets,
@@ -42,6 +43,14 @@ def resolve_benchmark_datasets_from_corpus_assets(
         raw_prefix=config.raw_prefix,
         datasets=dataset_specs,
     )
+    expected_asset_fingerprints_by_slug = build_expected_asset_fingerprints_by_slug(
+        config=config,
+        datasets=dataset_specs,
+        inventory=inventory,
+        explicit_expected_asset_fingerprints_by_slug=(
+            config.expected_asset_fingerprints_by_slug
+        ),
+    )
     plan = build_plan_for_datasets(
         datasets=dataset_specs,
         run_id=config.corpus_run_id,
@@ -51,7 +60,7 @@ def resolve_benchmark_datasets_from_corpus_assets(
         raw_exists_by_slug={spec.slug: True for spec in dataset_specs},
         reuse_existing=config.reuse_existing,
         inventory=inventory,
-        expected_asset_fingerprints_by_slug=config.expected_asset_fingerprints_by_slug,
+        expected_asset_fingerprints_by_slug=expected_asset_fingerprints_by_slug,
     )
     return (
         benchmark_dataset_specs_from_corpus_asset_plan(
